@@ -28,7 +28,7 @@ export async function login(prevState: any, formData: FormData) {
     const FAKE_USER_PASSWORD = process.env.APP_USER_PASSWORD;
 
     if (email === FAKE_USER_EMAIL && password === FAKE_USER_PASSWORD) {
-      const cookieStore = cookies();
+      const cookieStore = await cookies();
       cookieStore.set(SESSION_COOKIE_NAME, 'authenticated', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -45,7 +45,7 @@ export async function login(prevState: any, formData: FormData) {
 }
 
 export async function logout() {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   cookieStore.delete(SESSION_COOKIE_NAME);
   redirect('/login');
 }
@@ -75,16 +75,13 @@ export async function addOpportunity(input: AddOpportunityInput) {
   const { name, details, deadline, documentUri, documentType } = parsed.data;
 
   try {
-    const newOpportunity: Opportunity = {
-      id: new Date().toISOString() + Math.random(),
+    const newOpportunity = await saveOpportunity({
       name,
       details,
       deadline,
       documentUri: documentUri,
       documentType: documentType,
-    };
-
-    await saveOpportunity(newOpportunity);
+    });
 
     revalidatePath('/');
     return { message: `Successfully added "${newOpportunity.name}"!`, success: true };
