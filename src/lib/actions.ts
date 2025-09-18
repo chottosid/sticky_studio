@@ -4,7 +4,6 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { extractOpportunityDetails } from '@/ai/flows/extract-opportunity-details';
 import { saveOpportunity } from '@/lib/data';
 import { Opportunity } from './types';
 
@@ -52,31 +51,36 @@ export async function logout() {
 }
 
 const AddOpportunitySchema = z.object({
-  documentDataUri: z.string().min(1, 'Document is required.'),
+  name: z.string().min(1, 'Name is required.'),
+  details: z.string().min(1, 'Details are required.'),
+  deadline: z.string().optional(),
+  documentUri: z.string().min(1, 'Document URI is missing.'),
   documentType: z.enum(['image', 'pdf', 'text', 'unknown']),
 });
 
-export async function addOpportunity(prevState: any, formData: FormData) {
-  const parsed = AddOpportunitySchema.safeParse(Object.fromEntries(formData));
+type AddOpportunityInput = z.infer<typeof AddOpportunitySchema>;
+
+export async function addOpportunity(input: AddOpportunityInput) {
+  const parsed = AddOpportunitySchema.safeParse(input);
 
   if (!parsed.success) {
+    console.log(parsed.error.flatten().fieldErrors);
     return {
-      message: 'Invalid form data.',
+      success: false,
+      message: 'Invalid form data. Please ensure all fields are filled correctly.',
       errors: parsed.error.flatten().fieldErrors,
     };
   }
-
-  const { documentDataUri, documentType } = parsed.data;
+  
+  const { name, details, deadline, documentUri, documentType } = parsed.data;
 
   try {
-    const extractedDetails = await extractOpportunityDetails({ documentDataUri });
-
     const newOpportunity: Opportunity = {
       id: new Date().toISOString() + Math.random(),
-      name: extractedDetails.name,
-      details: extractedDetails.details,
-      deadline: extractedDetails.deadline,
-      documentUri: documentDataUri,
+      name,
+      details,
+      deadline,
+      documentUri: documentUri,
       documentType: documentType,
     };
 
@@ -86,6 +90,6 @@ export async function addOpportunity(prevState: any, formData: FormData) {
     return { message: `Successfully added "${newOpportunity.name}"!`, success: true };
   } catch (e) {
     console.error(e);
-    return { message: 'AI processing failed. Please try again.' };
+    return { message: 'Failed to save the opportunity. Please try again.', success: false };
   }
 }
