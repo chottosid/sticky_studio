@@ -1,7 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { useFormState, useFormStatus } from 'react-dom';
+import { useActionState } from 'react';
+import { useFormStatus } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -49,7 +50,7 @@ export function AddOpportunityDialog() {
   const formRef = React.useRef<HTMLFormElement>(null);
   const { toast } = useToast();
 
-  const [state, formAction] = useFormState(addOpportunity, undefined);
+  const [state, formAction] = useActionState(addOpportunity, undefined);
 
   React.useEffect(() => {
     if (state?.message) {

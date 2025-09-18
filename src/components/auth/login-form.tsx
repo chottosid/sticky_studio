@@ -1,7 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { useFormState, useFormStatus } from 'react-dom';
+import { useActionState } from 'react';
+import { useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -22,7 +23,7 @@ function SubmitButton() {
 export function LoginForm() {
   const router = useRouter();
   const { toast } = useToast();
-  const [state, formAction] = useFormState(login, undefined);
+  const [state, formAction] = useActionState(login, undefined);
 
   React.useEffect(() => {
     if (state?.message) {
