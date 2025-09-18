@@ -20,10 +20,14 @@ export default function OpportunityDetailView({ opportunity }: OpportunityDetail
   const router = useRouter();
 
   useEffect(() => {
-    if (opportunity.documentType === 'text') {
+    if (opportunity.documentType === 'text' && typeof opportunity.documentUri === 'string') {
       try {
         const base64Part = opportunity.documentUri.split(',')[1];
-        setDecodedText(atob(base64Part));
+        if (base64Part) {
+          setDecodedText(atob(base64Part));
+        } else {
+          setDecodedText('Error: Invalid text format.');
+        }
       } catch (error) {
         console.error('Failed to decode text URI:', error);
         setDecodedText('Error: Could not display text content.');
@@ -31,11 +35,13 @@ export default function OpportunityDetailView({ opportunity }: OpportunityDetail
     }
   }, [opportunity.documentUri, opportunity.documentType]);
 
-  const formattedDeadline = opportunity.deadline
+  const formattedDeadline = opportunity.deadline && typeof opportunity.deadline === 'string'
     ? format(parseISO(opportunity.deadline), 'MMMM do, yyyy')
     : null;
     
-  const isPastDeadline = opportunity.deadline ? new Date(opportunity.deadline) < new Date() : false;
+  const isPastDeadline = opportunity.deadline && typeof opportunity.deadline === 'string' 
+    ? new Date(opportunity.deadline) < new Date() 
+    : false;
 
   const openDocument = () => {
     window.open(opportunity.documentUri, '_blank');

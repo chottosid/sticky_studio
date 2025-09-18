@@ -59,7 +59,7 @@ export async function logout() {
 const AddOpportunitySchema = z.object({
   name: z.string().min(1, 'Name is required.'),
   details: z.string().min(1, 'Details are required.'),
-  deadline: z.string().optional(),
+  deadline: z.string().optional().nullable().transform(val => val || undefined),
   documentUri: z.string().min(1, 'Document URI is missing.'),
   documentType: z.enum(['image', 'pdf', 'text', 'unknown']),
 });

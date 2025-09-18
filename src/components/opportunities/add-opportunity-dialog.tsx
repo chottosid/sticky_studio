@@ -121,10 +121,15 @@ export function AddOpportunityDialog() {
     setIsSaving(true);
     const formData = new FormData(formRef.current);
     
+    // Get form values and handle null/empty cases properly
+    const name = formData.get('name');
+    const details = formData.get('details');
+    const deadline = formData.get('deadline');
+    
     const opportunityData = {
-        name: formData.get('name') as string,
-        details: formData.get('details') as string,
-        deadline: formData.get('deadline') as string | undefined,
+        name: typeof name === 'string' ? name : '',
+        details: typeof details === 'string' ? details : '',
+        deadline: typeof deadline === 'string' && deadline.trim() !== '' ? deadline : undefined,
         documentUri: finalDocumentUri,
         documentType: finalDocumentType
     }

@@ -92,12 +92,16 @@ const getIconColor = (documentType: Opportunity['documentType']) => {
 export default function OpportunityCard({ opportunity }: OpportunityCardProps) {
   const Icon = iconMap[opportunity.documentType] || BrainCircuit;
 
-  const formattedDeadline = opportunity.deadline
+  const formattedDeadline = opportunity.deadline && typeof opportunity.deadline === 'string'
     ? format(parseISO(opportunity.deadline), 'MMM dd, yyyy')
     : null;
     
-  const isPastDeadline = opportunity.deadline ? new Date(opportunity.deadline) < new Date() : false;
-  const isUrgent = opportunity.deadline ? new Date(opportunity.deadline) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) : false;
+  const isPastDeadline = opportunity.deadline && typeof opportunity.deadline === 'string'
+    ? new Date(opportunity.deadline) < new Date() 
+    : false;
+  const isUrgent = opportunity.deadline && typeof opportunity.deadline === 'string'
+    ? new Date(opportunity.deadline) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) 
+    : false;
 
   return (
     <Link href={`/opportunity/${opportunity.id}`} className="block transition-all duration-300 hover:scale-105 hover:shadow-2xl">
