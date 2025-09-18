@@ -1,3 +1,22 @@
 {
-  "placeholderImages": []
+  "placeholderImages": [
+    {
+      "id": "mock-image-1",
+      "description": "A university campus.",
+      "imageUrl": "https://picsum.photos/seed/101/600/400",
+      "imageHint": "university campus"
+    },
+    {
+      "id": "mock-pdf-1",
+      "description": "A document icon.",
+      "imageUrl": "https://picsum.photos/seed/102/600/400",
+      "imageHint": "document paper"
+    },
+    {
+      "id": "mock-text-1",
+      "description": "A text document icon.",
+      "imageUrl": "https://picsum.photos/seed/103/600/400",
+      "imageHint": "text note"
+    }
+  ]
 }

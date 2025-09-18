@@ -1,0 +1,99 @@
+'use client';
+
+import Image from 'next/image';
+import { Opportunity } from '@/lib/types';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { CalendarDays, ExternalLink } from 'lucide-react';
+import { format, parseISO } from 'date-fns';
+import { useEffect, useState } from 'react';
+import { cn } from '@/lib/utils';
+
+type OpportunityDetailViewProps = {
+  opportunity: Opportunity;
+};
+
+export default function OpportunityDetailView({ opportunity }: OpportunityDetailViewProps) {
+  const [decodedText, setDecodedText] = useState('');
+
+  useEffect(() => {
+    if (opportunity.documentType === 'text') {
+      try {
+        const base64Part = opportunity.documentUri.split(',')[1];
+        setDecodedText(atob(base64Part));
+      } catch (error) {
+        console.error('Failed to decode text URI:', error);
+        setDecodedText('Error: Could not display text content.');
+      }
+    }
+  }, [opportunity.documentUri, opportunity.documentType]);
+
+  const formattedDeadline = opportunity.deadline
+    ? format(parseISO(opportunity.deadline), 'MMMM do, yyyy')
+    : null;
+    
+  const isPastDeadline = opportunity.deadline ? new Date(opportunity.deadline) < new Date() : false;
+
+  const openDocument = () => {
+    window.open(opportunity.documentUri, '_blank');
+  };
+
+  return (
+    <div className="mx-auto max-w-4xl">
+      <Card className="overflow-hidden shadow-lg">
+        <CardHeader>
+          <CardTitle className="font-headline text-3xl">{opportunity.name}</CardTitle>
+          <div className="pt-4">
+            {formattedDeadline ? (
+              <Badge variant={isPastDeadline ? "destructive" : "secondary"} className={cn('text-base', !isPastDeadline && 'bg-accent/20 text-accent-foreground')}>
+                <CalendarDays className="mr-2 h-4 w-4" />
+                {isPastDeadline ? 'Deadline Passed' : `Deadline: ${formattedDeadline}`}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-base">No Deadline Specified</Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-8">
+          <div>
+            <h2 className="font-headline text-xl font-semibold mb-2">Details</h2>
+            <p className="whitespace-pre-wrap text-foreground/80">{opportunity.details}</p>
+          </div>
+
+          <div>
+            <h2 className="font-headline text-xl font-semibold mb-4">Original Document</h2>
+            <div className="rounded-lg border bg-muted/50 p-4">
+              {opportunity.documentType === 'image' && (
+                <div className="relative aspect-video w-full max-w-md mx-auto">
+                  <Image
+                    src={opportunity.documentUri}
+                    alt="Opportunity Document Preview"
+                    fill
+                    className="object-contain"
+                  />
+                </div>
+              )}
+              {opportunity.documentType === 'text' && (
+                <pre className="whitespace-pre-wrap rounded-md bg-background p-4 font-mono text-sm max-h-96 overflow-auto">
+                  <code>{decodedText}</code>
+                </pre>
+              )}
+              {(opportunity.documentType === 'pdf' || opportunity.documentType === 'unknown') && (
+                <p className="text-center text-muted-foreground">
+                  Document preview is not available for this file type.
+                </p>
+              )}
+              <div className="mt-4 text-center">
+                <Button onClick={openDocument}>
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Open Original Document
+                </Button>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
