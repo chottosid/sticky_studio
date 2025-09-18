@@ -16,10 +16,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { PlusCircle, Upload, Loader2, Save, Image as ImageIcon, Clipboard } from 'lucide-react';
+import { PlusCircle, Loader2, Save } from 'lucide-react';
 import { addOpportunity } from '@/lib/actions';
 import { extractOpportunityDetails } from '@/ai/flows/extract-opportunity-details';
 import { useToast } from '@/hooks/use-toast';
+import { UnifiedImageInput } from '@/components/ui/unified-image-input';
 import type { Opportunity } from '@/lib/types';
 
 type ExtractedData = Omit<Opportunity, 'id' | 'documentUri' | 'documentType'>;
@@ -27,15 +28,16 @@ type ExtractedData = Omit<Opportunity, 'id' | 'documentUri' | 'documentType'>;
 export function AddOpportunityDialog() {
   const [open, setOpen] = React.useState(false);
   const [step, setStep] = React.useState<'input' | 'review'>('input');
-  const [activeTab, setActiveTab] = React.useState('file');
+  const [activeTab, setActiveTab] = React.useState('image');
   const [isExtracting, setIsExtracting] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
-  const [isPasting, setIsPasting] = React.useState(false);
 
   // Input states
-  const [fileName, setFileName] = React.useState('');
-  const [fileDataUri, setFileDataUri] = React.useState('');
-  const [fileType, setFileType] = React.useState<'image' | 'pdf' | 'text' | 'unknown'>('unknown');
+  const [selectedFile, setSelectedFile] = React.useState<{
+    name: string;
+    dataUri: string;
+    type: 'image' | 'pdf' | 'unknown';
+  } | null>(null);
   const [textInput, setTextInput] = React.useState('');
 
   // Review states
@@ -50,86 +52,37 @@ export function AddOpportunityDialog() {
     setStep('input');
     setIsExtracting(false);
     setIsSaving(false);
-    setIsPasting(false);
-    setFileName('');
-    setFileDataUri('');
+    setSelectedFile(null);
     setTextInput('');
     setExtractedData(null);
     setFinalDocumentUri('');
     setFinalDocumentType('unknown');
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setFileName(file.name);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const uri = event.target?.result as string;
-        setFileDataUri(uri);
-        if (file.type.startsWith('image/')) setFileType('image');
-        else if (file.type === 'application/pdf') setFileType('pdf');
-        else setFileType('unknown');
-      };
-      reader.readAsDataURL(file);
-    }
+  const handleFileSelect = (fileData: {
+    name: string;
+    dataUri: string;
+    type: 'image' | 'pdf' | 'unknown';
+  }) => {
+    setSelectedFile(fileData);
+    setActiveTab('image'); // Switch to image tab when file is selected
+  };
+
+  const handleFileClear = () => {
+    setSelectedFile(null);
   };
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setTextInput(e.target.value);
   };
 
-  const handlePasteImage = async () => {
-    setIsPasting(true);
-    try {
-      const clipboardItems = await navigator.clipboard.read();
-      
-      for (const clipboardItem of clipboardItems) {
-        for (const type of clipboardItem.types) {
-          if (type.startsWith('image/')) {
-            const blob = await clipboardItem.getType(type);
-            const reader = new FileReader();
-            reader.onload = (event) => {
-              const uri = event.target?.result as string;
-              setFileDataUri(uri);
-              setFileType('image');
-              setFileName(`pasted-image-${Date.now()}.png`);
-              setActiveTab('file');
-              toast({
-                title: 'Image Pasted!',
-                description: 'Image has been pasted from clipboard. You can now extract details.',
-              });
-            };
-            reader.readAsDataURL(blob);
-            return;
-          }
-        }
-      }
-      
-      toast({
-        variant: 'destructive',
-        title: 'No Image Found',
-        description: 'No image found in clipboard. Please copy an image first.',
-      });
-    } catch (error) {
-      console.error('Paste failed:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Paste Failed',
-        description: 'Could not paste image from clipboard. Please try uploading a file instead.',
-      });
-    } finally {
-      setIsPasting(false);
-    }
-  };
-
   const handleExtract = async () => {
     let documentDataUri = '';
-    let documentType: typeof fileType = 'unknown';
+    let documentType: 'image' | 'pdf' | 'text' | 'unknown' = 'unknown';
 
-    if (activeTab === 'file' && fileDataUri) {
-      documentDataUri = fileDataUri;
-      documentType = fileType;
+    if (activeTab === 'image' && selectedFile) {
+      documentDataUri = selectedFile.dataUri;
+      documentType = selectedFile.type;
     } else if (activeTab === 'text' && textInput) {
       documentDataUri = `data:text/plain;base64,${btoa(textInput)}`;
       documentType = 'text';
@@ -233,67 +186,22 @@ export function AddOpportunityDialog() {
         {step === 'input' && (
           <>
             <Tabs
-              defaultValue="file"
+              defaultValue="image"
               onValueChange={setActiveTab}
               className="w-full"
             >
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="file">Upload File</TabsTrigger>
-                <TabsTrigger value="paste">Paste Image</TabsTrigger>
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="image">Upload/Paste Image</TabsTrigger>
                 <TabsTrigger value="text">Paste Text</TabsTrigger>
               </TabsList>
-              <TabsContent value="file">
-                <div className="grid w-full items-center gap-1.5 py-4">
-                  <Label htmlFor="picture">Document (PDF or Image)</Label>
-                  <div className="relative">
-                    <Input
-                      id="picture"
-                      type="file"
-                      className="pl-12"
-                      onChange={handleFileChange}
-                      accept="application/pdf,image/*"
-                    />
-                    <Upload className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                  </div>
-                  {fileName && (
-                    <p className="text-sm text-muted-foreground pt-2">
-                      File: {fileName}
-                    </p>
-                  )}
-                </div>
-              </TabsContent>
-              <TabsContent value="paste">
-                <div className="grid w-full items-center gap-1.5 py-4">
-                  <Label>Paste Image from Clipboard</Label>
-                  <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-primary/20 rounded-lg bg-gradient-to-br from-primary/5 to-accent/5">
-                    <ImageIcon className="h-12 w-12 text-primary/60 mb-4" />
-                    <p className="text-sm text-muted-foreground text-center mb-4">
-                      Copy an image to your clipboard, then click the button below to paste it.
-                    </p>
-                    <Button 
-                      onClick={handlePasteImage} 
-                      disabled={isPasting}
-                      className="flex items-center gap-2"
-                    >
-                      {isPasting ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Pasting...
-                        </>
-                      ) : (
-                        <>
-                          <Clipboard className="h-4 w-4" />
-                          Paste Image
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                  {fileName && fileDataUri && (
-                    <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-                      <p className="text-sm text-green-700 font-medium">✓ Image pasted successfully!</p>
-                      <p className="text-xs text-green-600 mt-1">File: {fileName}</p>
-                    </div>
-                  )}
+              <TabsContent value="image">
+                <div className="py-4">
+                  <UnifiedImageInput
+                    onFileSelect={handleFileSelect}
+                    onClear={handleFileClear}
+                    selectedFile={selectedFile}
+                    disabled={isExtracting}
+                  />
                 </div>
               </TabsContent>
               <TabsContent value="text">
