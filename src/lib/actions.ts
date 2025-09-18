@@ -8,8 +8,6 @@ import { saveOpportunity } from '@/lib/data';
 import { Opportunity } from './types';
 
 const SESSION_COOKIE_NAME = 'session';
-const FAKE_USER_EMAIL = 'user@example.com';
-const FAKE_USER_PASSWORD = 'password123';
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -26,6 +24,9 @@ export async function login(prevState: any, formData: FormData) {
 
     const { email, password } = parsed.data;
 
+    const FAKE_USER_EMAIL = process.env.APP_USER_EMAIL;
+    const FAKE_USER_PASSWORD = process.env.APP_USER_PASSWORD;
+
     if (email === FAKE_USER_EMAIL && password === FAKE_USER_PASSWORD) {
       const cookieStore = cookies();
       cookieStore.set(SESSION_COOKIE_NAME, 'authenticated', {
@@ -34,7 +35,6 @@ export async function login(prevState: any, formData: FormData) {
         maxAge: 60 * 60 * 24 * 7, // One week
         path: '/',
       });
-      // Redirect is handled on the client-side in this implementation
     } else {
       return { message: 'Invalid credentials.' };
     }

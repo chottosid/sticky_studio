@@ -15,9 +15,6 @@ export default function LoginPage() {
           </p>
         </div>
         <LoginForm />
-        <p className="px-8 text-center text-sm text-muted-foreground">
-          Use <span className="font-medium text-foreground">user@example.com</span> and <span className="font-medium text-foreground">password123</span>
-        </p>
       </div>
     </main>
   );
