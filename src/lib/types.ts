@@ -5,4 +5,5 @@ export type Opportunity = {
   deadline?: string;
   documentUri: string;
   documentType: 'image' | 'pdf' | 'text' | 'unknown';
+  created_at?: string;
 };

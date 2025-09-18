@@ -4,7 +4,7 @@ import { query } from './db';
 export async function getOpportunities(): Promise<Opportunity[]> {
   try {
     const result = await query(`
-      SELECT id, name, details, deadline, document_uri as "documentUri", document_type as "documentType"
+      SELECT id, name, details, deadline, document_uri as "documentUri", document_type as "documentType", created_at
       FROM opportunities 
       ORDER BY created_at DESC
     `);
@@ -16,6 +16,7 @@ export async function getOpportunities(): Promise<Opportunity[]> {
       deadline: row.deadline,
       documentUri: row.documentUri,
       documentType: row.documentType,
+      created_at: row.created_at,
     }));
   } catch (error) {
     console.error('Error fetching opportunities:', error);
@@ -26,7 +27,7 @@ export async function getOpportunities(): Promise<Opportunity[]> {
 export async function getOpportunityById(id: string): Promise<Opportunity | undefined> {
   try {
     const result = await query(`
-      SELECT id, name, details, deadline, document_uri as "documentUri", document_type as "documentType"
+      SELECT id, name, details, deadline, document_uri as "documentUri", document_type as "documentType", created_at
       FROM opportunities 
       WHERE id = $1
     `, [id]);
@@ -43,6 +44,7 @@ export async function getOpportunityById(id: string): Promise<Opportunity | unde
       deadline: row.deadline,
       documentUri: row.documentUri,
       documentType: row.documentType,
+      created_at: row.created_at,
     };
   } catch (error) {
     console.error('Error fetching opportunity by ID:', error);
@@ -52,6 +54,11 @@ export async function getOpportunityById(id: string): Promise<Opportunity | unde
 
 export async function saveOpportunity(opportunity: Omit<Opportunity, 'id'>): Promise<Opportunity> {
   try {
+    // Convert empty string deadline to null for PostgreSQL
+    const deadline = opportunity.deadline && opportunity.deadline.trim() !== '' 
+      ? opportunity.deadline 
+      : null;
+
     const result = await query(`
       INSERT INTO opportunities (name, details, deadline, document_uri, document_type)
       VALUES ($1, $2, $3, $4, $5)
@@ -59,7 +66,7 @@ export async function saveOpportunity(opportunity: Omit<Opportunity, 'id'>): Pro
     `, [
       opportunity.name,
       opportunity.details,
-      opportunity.deadline,
+      deadline,
       opportunity.documentUri,
       opportunity.documentType,
     ]);

@@ -1,7 +1,14 @@
 import { LoginForm } from '@/components/auth/login-form';
 import { Gem } from 'lucide-react';
+import { isAuthenticated } from '@/lib/actions';
+import { redirect } from 'next/navigation';
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  const authenticated = await isAuthenticated();
+  
+  if (authenticated) {
+    redirect('/');
+  }
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
       <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">

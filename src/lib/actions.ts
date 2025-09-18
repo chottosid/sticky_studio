@@ -9,6 +9,12 @@ import { Opportunity } from './types';
 
 const SESSION_COOKIE_NAME = 'session';
 
+export async function isAuthenticated() {
+  const cookieStore = await cookies();
+  const session = cookieStore.get(SESSION_COOKIE_NAME);
+  return session?.value === 'authenticated';
+}
+
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),

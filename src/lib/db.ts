@@ -1,5 +1,11 @@
 import { Pool } from 'pg';
 
+// Load environment variables
+if (typeof window === 'undefined') {
+  // Only load dotenv on server side
+  require('dotenv').config();
+}
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,

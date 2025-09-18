@@ -1,7 +1,8 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import Header from '@/components/layout/header';
 import OpportunityDetailView from '@/components/opportunities/opportunity-detail-view';
 import { getOpportunityById } from '@/lib/data';
+import { isAuthenticated } from '@/lib/actions';
 
 type OpportunityPageProps = {
   params: {
@@ -10,7 +11,14 @@ type OpportunityPageProps = {
 };
 
 export default async function OpportunityPage({ params }: OpportunityPageProps) {
-  const opportunity = await getOpportunityById(params.id);
+  const authenticated = await isAuthenticated();
+  
+  if (!authenticated) {
+    redirect('/login');
+  }
+
+  const { id } = await params;
+  const opportunity = await getOpportunityById(id);
 
   if (!opportunity) {
     notFound();

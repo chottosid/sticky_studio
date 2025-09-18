@@ -5,7 +5,8 @@ import { Opportunity } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { CalendarDays, ExternalLink } from 'lucide-react';
+import { CalendarDays, ExternalLink, ArrowLeft } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { format, parseISO } from 'date-fns';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -16,6 +17,7 @@ type OpportunityDetailViewProps = {
 
 export default function OpportunityDetailView({ opportunity }: OpportunityDetailViewProps) {
   const [decodedText, setDecodedText] = useState('');
+  const router = useRouter();
 
   useEffect(() => {
     if (opportunity.documentType === 'text') {
@@ -41,6 +43,16 @@ export default function OpportunityDetailView({ opportunity }: OpportunityDetail
 
   return (
     <div className="mx-auto max-w-4xl">
+      <div className="mb-6">
+        <Button 
+          variant="outline" 
+          onClick={() => router.back()}
+          className="flex items-center gap-2 hover:bg-primary/10 transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Dashboard
+        </Button>
+      </div>
       <Card className="overflow-hidden shadow-lg">
         <CardHeader>
           <CardTitle className="font-headline text-3xl">{opportunity.name}</CardTitle>

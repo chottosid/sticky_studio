@@ -16,7 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { PlusCircle, Upload, Loader2, Save } from 'lucide-react';
+import { PlusCircle, Upload, Loader2, Save, Image as ImageIcon, Clipboard } from 'lucide-react';
 import { addOpportunity } from '@/lib/actions';
 import { extractOpportunityDetails } from '@/ai/flows/extract-opportunity-details';
 import { useToast } from '@/hooks/use-toast';
@@ -30,6 +30,7 @@ export function AddOpportunityDialog() {
   const [activeTab, setActiveTab] = React.useState('file');
   const [isExtracting, setIsExtracting] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
+  const [isPasting, setIsPasting] = React.useState(false);
 
   // Input states
   const [fileName, setFileName] = React.useState('');
@@ -49,6 +50,7 @@ export function AddOpportunityDialog() {
     setStep('input');
     setIsExtracting(false);
     setIsSaving(false);
+    setIsPasting(false);
     setFileName('');
     setFileDataUri('');
     setTextInput('');
@@ -75,6 +77,50 @@ export function AddOpportunityDialog() {
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setTextInput(e.target.value);
+  };
+
+  const handlePasteImage = async () => {
+    setIsPasting(true);
+    try {
+      const clipboardItems = await navigator.clipboard.read();
+      
+      for (const clipboardItem of clipboardItems) {
+        for (const type of clipboardItem.types) {
+          if (type.startsWith('image/')) {
+            const blob = await clipboardItem.getType(type);
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              const uri = event.target?.result as string;
+              setFileDataUri(uri);
+              setFileType('image');
+              setFileName(`pasted-image-${Date.now()}.png`);
+              setActiveTab('file');
+              toast({
+                title: 'Image Pasted!',
+                description: 'Image has been pasted from clipboard. You can now extract details.',
+              });
+            };
+            reader.readAsDataURL(blob);
+            return;
+          }
+        }
+      }
+      
+      toast({
+        variant: 'destructive',
+        title: 'No Image Found',
+        description: 'No image found in clipboard. Please copy an image first.',
+      });
+    } catch (error) {
+      console.error('Paste failed:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Paste Failed',
+        description: 'Could not paste image from clipboard. Please try uploading a file instead.',
+      });
+    } finally {
+      setIsPasting(false);
+    }
   };
 
   const handleExtract = async () => {
@@ -191,8 +237,9 @@ export function AddOpportunityDialog() {
               onValueChange={setActiveTab}
               className="w-full"
             >
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="file">Upload File</TabsTrigger>
+                <TabsTrigger value="paste">Paste Image</TabsTrigger>
                 <TabsTrigger value="text">Paste Text</TabsTrigger>
               </TabsList>
               <TabsContent value="file">
@@ -212,6 +259,40 @@ export function AddOpportunityDialog() {
                     <p className="text-sm text-muted-foreground pt-2">
                       File: {fileName}
                     </p>
+                  )}
+                </div>
+              </TabsContent>
+              <TabsContent value="paste">
+                <div className="grid w-full items-center gap-1.5 py-4">
+                  <Label>Paste Image from Clipboard</Label>
+                  <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-primary/20 rounded-lg bg-gradient-to-br from-primary/5 to-accent/5">
+                    <ImageIcon className="h-12 w-12 text-primary/60 mb-4" />
+                    <p className="text-sm text-muted-foreground text-center mb-4">
+                      Copy an image to your clipboard, then click the button below to paste it.
+                    </p>
+                    <Button 
+                      onClick={handlePasteImage} 
+                      disabled={isPasting}
+                      className="flex items-center gap-2"
+                    >
+                      {isPasting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Pasting...
+                        </>
+                      ) : (
+                        <>
+                          <Clipboard className="h-4 w-4" />
+                          Paste Image
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                  {fileName && fileDataUri && (
+                    <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <p className="text-sm text-green-700 font-medium">✓ Image pasted successfully!</p>
+                      <p className="text-xs text-green-600 mt-1">File: {fileName}</p>
+                    </div>
                   )}
                 </div>
               </TabsContent>
