@@ -47,10 +47,27 @@ export async function initDatabase() {
         details TEXT NOT NULL,
         deadline DATE,
         document_uri TEXT NOT NULL,
-        document_type VARCHAR(20) NOT NULL CHECK (document_type IN ('image', 'pdf', 'text', 'unknown')),
+        document_type VARCHAR(50) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
+      )
+    `);
+
+    // Create indexes for better query performance
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_opportunities_created_at ON opportunities(created_at DESC);
+    `);
+    
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_opportunities_deadline ON opportunities(deadline) WHERE deadline IS NOT NULL;
+    `);
+    
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_opportunities_name ON opportunities(name);
+    `);
+    
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_opportunities_search ON opportunities USING gin(to_tsvector('english', name || ' ' || details));
     `);
     
     console.log('Database schema initialized successfully');

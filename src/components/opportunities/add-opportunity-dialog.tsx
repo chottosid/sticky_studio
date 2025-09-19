@@ -23,6 +23,25 @@ import { useToast } from '@/hooks/use-toast';
 import { UnifiedImageInput } from '@/components/ui/unified-image-input';
 import type { Opportunity } from '@/lib/types';
 
+// Helper function to safely encode text to base64 with Unicode support
+function encodeTextToBase64(text: string): string {
+  try {
+    // Method 1: Use btoa with proper Unicode encoding
+    return btoa(unescape(encodeURIComponent(text)));
+  } catch (error) {
+    try {
+      // Method 2: Fallback using TextEncoder for better Unicode support
+      const encoder = new TextEncoder();
+      const uint8Array = encoder.encode(text);
+      return btoa(String.fromCharCode(...uint8Array));
+    } catch (fallbackError) {
+      // Method 3: Final fallback - remove problematic characters
+      const cleanText = text.replace(/[^\x00-\x7F]/g, ''); // Remove non-ASCII
+      return btoa(cleanText);
+    }
+  }
+}
+
 type ExtractedData = Omit<Opportunity, 'id' | 'documentUri' | 'documentType'>;
 
 export function AddOpportunityDialog() {
@@ -84,8 +103,19 @@ export function AddOpportunityDialog() {
       documentDataUri = selectedFile.dataUri;
       documentType = selectedFile.type;
     } else if (activeTab === 'text' && textInput) {
-      documentDataUri = `data:text/plain;base64,${btoa(textInput)}`;
-      documentType = 'text';
+      try {
+        const base64Text = encodeTextToBase64(textInput);
+        documentDataUri = `data:text/plain;base64,${base64Text}`;
+        documentType = 'text';
+      } catch (error) {
+        console.error('Text encoding failed:', error);
+        toast({
+          variant: 'destructive',
+          title: 'Text Encoding Failed',
+          description: 'Unable to process the text. Please try with simpler text content.',
+        });
+        return;
+      }
     } else {
       toast({
         variant: 'destructive',

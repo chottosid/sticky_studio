@@ -1,10 +1,11 @@
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Opportunity } from '@/lib/types';
+import { Button } from '@/components/ui/button';
 import { format, parseISO } from 'date-fns';
 import { CalendarDays, Newspaper, Image as ImageIcon, FileText, BrainCircuit, Clock, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { Opportunity } from '@/lib/types';
 
 // Academic terms and fields to highlight
 const ACADEMIC_TERMS = [

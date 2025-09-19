@@ -1,5 +1,5 @@
 import Header from '@/components/layout/header';
-import OpportunityList from '@/components/opportunities/opportunity-list';
+import PaginatedOpportunityList from '@/components/opportunities/paginated-opportunity-list';
 import { getOpportunities } from '@/lib/data';
 import { isAuthenticated } from '@/lib/actions';
 import { redirect } from 'next/navigation';
@@ -11,7 +11,8 @@ export default async function Home() {
     redirect('/login');
   }
 
-  const opportunities = await getOpportunities();
+  // Load only the first page initially
+  const { opportunities, total } = await getOpportunities(1, 6);
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-gradient-to-br from-primary/5 via-background to-accent/5">
@@ -21,7 +22,10 @@ export default async function Home() {
           <h1 className="font-headline text-3xl font-bold text-primary">Your Opportunities</h1>
           <p className="text-muted-foreground">Manage your scholarships, PhD positions, and competitions</p>
         </div>
-        <OpportunityList opportunities={opportunities} />
+        <PaginatedOpportunityList 
+          initialOpportunities={opportunities} 
+          initialTotal={total}
+        />
       </main>
     </div>
   );

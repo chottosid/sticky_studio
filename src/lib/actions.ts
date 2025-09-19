@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { saveOpportunity } from '@/lib/data';
+import { saveOpportunity, getOpportunities, deleteOpportunity, updateOpportunity } from '@/lib/data';
 import { Opportunity } from './types';
 
 const SESSION_COOKIE_NAME = 'session';
@@ -94,5 +94,80 @@ export async function addOpportunity(input: AddOpportunityInput) {
   } catch (e) {
     console.error(e);
     return { message: 'Failed to save the opportunity. Please try again.', success: false };
+  }
+}
+
+export async function getOpportunitiesAction(
+  page: number = 1,
+  limit: number = 10,
+  sortBy: string = 'created_at',
+  sortOrder: 'ASC' | 'DESC' = 'DESC',
+  searchQuery?: string
+) {
+  try {
+    const result = await getOpportunities(page, limit, sortBy, sortOrder, searchQuery);
+    return { success: true, ...result };
+  } catch (error) {
+    console.error('Error fetching opportunities:', error);
+    return { success: false, opportunities: [], total: 0, hasMore: false };
+  }
+}
+
+export async function deleteOpportunityAction(id: string) {
+  try {
+    const deleted = await deleteOpportunity(id);
+    if (deleted) {
+      revalidatePath('/');
+      return { success: true, message: 'Opportunity deleted successfully' };
+    } else {
+      return { success: false, message: 'Opportunity not found' };
+    }
+  } catch (error) {
+    console.error('Error deleting opportunity:', error);
+    return { success: false, message: 'Failed to delete opportunity' };
+  }
+}
+
+const UpdateOpportunitySchema = z.object({
+  id: z.string().min(1, 'ID is required'),
+  name: z.string().min(1, 'Name is required').optional(),
+  details: z.string().min(1, 'Details are required').optional(),
+  deadline: z.string().optional().nullable().transform(val => val || undefined),
+  documentUri: z.string().optional(),
+  documentType: z.enum(['image', 'pdf', 'text', 'unknown']).optional(),
+});
+
+type UpdateOpportunityInput = z.infer<typeof UpdateOpportunitySchema>;
+
+export async function updateOpportunityAction(input: UpdateOpportunityInput) {
+  const parsed = UpdateOpportunitySchema.safeParse(input);
+
+  if (!parsed.success) {
+    return {
+      success: false,
+      message: 'Invalid form data. Please ensure all fields are filled correctly.',
+      errors: parsed.error.flatten().fieldErrors,
+    };
+  }
+  
+  const { id, ...updateData } = parsed.data;
+
+  try {
+    const updatedOpportunity = await updateOpportunity(id, updateData);
+    
+    if (updatedOpportunity) {
+      revalidatePath('/');
+      revalidatePath(`/opportunity/${id}`);
+      return { 
+        success: true, 
+        message: `Successfully updated "${updatedOpportunity.name}"!`,
+        opportunity: updatedOpportunity 
+      };
+    } else {
+      return { success: false, message: 'Opportunity not found' };
+    }
+  } catch (error) {
+    console.error('Update failed:', error);
+    return { message: 'Failed to update the opportunity. Please try again.', success: false };
   }
 }
