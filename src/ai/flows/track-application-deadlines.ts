@@ -44,9 +44,22 @@ const deadlineExtractionPrompt = ai.definePrompt({
   output: {schema: TrackApplicationDeadlinesOutputSchema},
   prompt: `You are an expert at extracting application deadlines from text.
 
-  Your goal is to identify any application deadlines mentioned in the provided document text and return them in ISO 8601 format (YYYY-MM-DD).
+  Current date: ${new Date().toISOString().split('T')[0]}
 
-  If no deadline is found, return an empty string for the deadline field.
+  Your goal is to identify any application deadlines mentioned in the provided document text and return them in EXACTLY the yyyy-mm-dd format.
+
+  CRITICAL INSTRUCTIONS:
+  - The deadline MUST be in yyyy-mm-dd format (e.g., 2025-09-22)
+  - For relative dates like "tomorrow", "next week", "in 2 months", calculate the exact date based on the current date above
+  - For dates like "December 15" without a year, assume the current year unless context suggests otherwise
+  - If multiple deadlines are found, return the earliest one
+  - If no deadline is found, return an empty string for the deadline field
+  - Double-check your date calculation for relative dates
+
+  Examples of correct output format:
+  - "2025-12-15" ✓
+  - "2026-01-30" ✓
+  - "" (empty string if no deadline found) ✓
 
   Document Text: {{{documentText}}}`,
 });
