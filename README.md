@@ -1,14 +1,6 @@
 # Sticky Studio - Opportunity Management
 
-A Next.js application for managing opportunities (scholarships, PhD positions, competitions) with PostgreSQL database integration.
-
-## Features
-
-- PostgreSQL database for data persistence
-- Simple authentication using environment variables
-- Opportunity management (create, view, edit)
-- Document support (images, PDFs, text)
-- Modern UI with Tailwind CSS
+An application for managing scholarships, PhD positions, competitions. Its a single user app.
 
 ## Setup
 
@@ -52,16 +44,3 @@ The application will be available at `http://localhost:9002`.
 - `APP_USER_EMAIL`: Admin email for authentication
 - `APP_USER_PASSWORD`: Admin password for authentication
 - `NODE_ENV`: Environment (development/production)
-
-## Database Schema
-
-The application uses a single `opportunities` table with the following structure:
-
-- `id`: Primary key (auto-increment)
-- `name`: Opportunity name
-- `details`: Detailed description
-- `deadline`: Application deadline (optional)
-- `document_uri`: Document URL or data URI
-- `document_type`: Type of document (image, pdf, text, unknown)
-- `created_at`: Creation timestamp
-- `updated_at`: Last update timestamp
