@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Upload, Image as ImageIcon, Loader2, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -101,9 +100,17 @@ export function UnifiedImageInput({
 
 
   const handleUploadClick = () => {
-    if (!disabled) {
-      fileInputRef.current?.click();
+    if (disabled) return;
+    const input = fileInputRef.current;
+    if (!input) return;
+
+    const picker = (input as HTMLInputElement & { showPicker?: () => void }).showPicker;
+    if (typeof picker === 'function') {
+      picker.call(input);
+      return;
     }
+
+    input.click();
   };
 
   const handleClear = () => {
@@ -141,11 +148,11 @@ export function UnifiedImageInput({
       <Label htmlFor="unified-file-input">Document (PDF or Image)</Label>
       
       {/* Hidden file input */}
-      <Input
+      <input
         ref={fileInputRef}
         id="unified-file-input"
         type="file"
-        className="hidden"
+        className="sr-only"
         onChange={handleFileChange}
         accept="application/pdf,image/*"
         disabled={disabled}
@@ -166,7 +173,7 @@ export function UnifiedImageInput({
         onDrop={handleDrop}
         onPaste={handleContainerPaste}
         tabIndex={0}
-        onClick={!selectedFile ? handleUploadClick : undefined}
+        onClick={handleUploadClick}
       >
         {selectedFile ? (
           <div className="flex flex-col items-center gap-3 w-full">
@@ -179,7 +186,10 @@ export function UnifiedImageInput({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={handleClear}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleClear();
+                }}
                 disabled={disabled}
                 className="h-8 w-8 p-0 hover:bg-red-100"
               >
