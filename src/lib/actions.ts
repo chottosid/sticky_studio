@@ -102,10 +102,11 @@ export async function getOpportunitiesAction(
   limit: number = 10,
   sortBy: string = 'created_at',
   sortOrder: 'ASC' | 'DESC' = 'DESC',
-  searchQuery?: string
+  searchQuery?: string,
+  status?: 'upcoming' | 'past'
 ) {
   try {
-    const result = await getOpportunities(page, limit, sortBy, sortOrder, searchQuery);
+    const result = await getOpportunities(page, limit, sortBy, sortOrder, searchQuery, status);
     return { success: true, ...result };
   } catch (error) {
     console.error('Error fetching opportunities:', error);

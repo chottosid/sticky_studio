@@ -7,9 +7,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ChevronLeft, ChevronRight, Search, X, Loader2, ChevronsLeft, ChevronsRight } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { ChevronLeft, ChevronRight, Search, X, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { getOpportunitiesAction } from '@/lib/actions';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 // Simple debounce hook inline
 function useDebounce<T>(value: T, delay: number): T {
@@ -30,17 +30,20 @@ function useDebounce<T>(value: T, delay: number): T {
 
 type SortOption = 'created_at' | 'deadline' | 'name';
 type SortOrder = 'ASC' | 'DESC';
+type FilterStatus = 'upcoming' | 'past';
 
 interface PaginatedOpportunityListProps {
   initialOpportunities: Opportunity[];
   initialTotal: number;
+  initialStatus?: FilterStatus;
 }
 
 const ITEMS_PER_PAGE = 6;
 
 export default function PaginatedOpportunityList({ 
   initialOpportunities, 
-  initialTotal 
+  initialTotal,
+  initialStatus = 'upcoming'
 }: PaginatedOpportunityListProps) {
   const [opportunities, setOpportunities] = useState<Opportunity[]>(initialOpportunities);
   const [currentPage, setCurrentPage] = useState(1);
@@ -49,6 +52,7 @@ export default function PaginatedOpportunityList({
   const [sortOrder, setSortOrder] = useState<SortOrder>('DESC');
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [status, setStatus] = useState<FilterStatus>(initialStatus);
   
   // Debounce search query to avoid too many API calls
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
@@ -57,11 +61,12 @@ export default function PaginatedOpportunityList({
     page: number,
     sort: SortOption,
     order: SortOrder,
-    search?: string
+    search: string | undefined,
+    statusFilter: FilterStatus
   ) => {
     setIsLoading(true);
     try {
-      const result = await getOpportunitiesAction(page, ITEMS_PER_PAGE, sort, order, search);
+      const result = await getOpportunitiesAction(page, ITEMS_PER_PAGE, sort, order, search, statusFilter);
       
       if (result.success) {
         setOpportunities(result.opportunities);
@@ -74,16 +79,15 @@ export default function PaginatedOpportunityList({
     }
   }, []);
 
-  // Fetch opportunities when filters change (reset to page 1)
+  // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
-    fetchOpportunities(1, sortBy, sortOrder, debouncedSearchQuery);
-  }, [debouncedSearchQuery, sortBy, sortOrder, fetchOpportunities]);
+  }, [debouncedSearchQuery, sortBy, sortOrder, status]);
 
   // Fetch opportunities when page changes
   useEffect(() => {
-    fetchOpportunities(currentPage, sortBy, sortOrder, debouncedSearchQuery);
-  }, [currentPage, fetchOpportunities, sortBy, sortOrder, debouncedSearchQuery]);
+    fetchOpportunities(currentPage, sortBy, sortOrder, debouncedSearchQuery, status);
+  }, [currentPage, sortBy, sortOrder, debouncedSearchQuery, status, fetchOpportunities]);
 
   const handleSortChange = (value: string) => {
     const [field, order] = value.split('-') as [SortOption, SortOrder];
@@ -97,8 +101,8 @@ export default function PaginatedOpportunityList({
 
   // Refresh function to be passed to opportunity cards
   const handleRefresh = useCallback(() => {
-    fetchOpportunities(currentPage, sortBy, sortOrder, debouncedSearchQuery);
-  }, [currentPage, sortBy, sortOrder, debouncedSearchQuery, fetchOpportunities]);
+    fetchOpportunities(currentPage, sortBy, sortOrder, debouncedSearchQuery, status);
+  }, [currentPage, sortBy, sortOrder, debouncedSearchQuery, status, fetchOpportunities]);
 
   const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
 
@@ -145,42 +149,59 @@ export default function PaginatedOpportunityList({
 
   return (
     <div className="space-y-6">
-      {/* Search and Filter Controls */}
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-          <Input
-            placeholder="Search opportunities..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 pr-10"
-          />
-          {searchQuery && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={clearSearch}
-              className="absolute right-1 top-1/2 transform -translate-y-1/2 h-8 w-8 p-0"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-        
-        <div className="flex items-center gap-4">
-          <Select value={`${sortBy}-${sortOrder}`} onValueChange={handleSortChange}>
-            <SelectTrigger className="w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="created_at-DESC">Newest First</SelectItem>
-              <SelectItem value="created_at-ASC">Oldest First</SelectItem>
-              <SelectItem value="deadline-ASC">Deadline Soon</SelectItem>
-              <SelectItem value="deadline-DESC">Deadline Later</SelectItem>
-              <SelectItem value="name-ASC">Name A-Z</SelectItem>
-              <SelectItem value="name-DESC">Name Z-A</SelectItem>
-            </SelectContent>
-          </Select>
+      <div className="flex flex-col gap-4">
+        <Tabs
+          value={status}
+          onValueChange={(value) => setStatus(value as FilterStatus)}
+          className="w-full"
+        >
+          <TabsList className="w-full sm:w-auto">
+            <TabsTrigger value="upcoming" className="flex-1 sm:flex-none">
+              Upcoming
+            </TabsTrigger>
+            <TabsTrigger value="past" className="flex-1 sm:flex-none">
+              Past
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {/* Search and Filter Controls */}
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <Input
+              placeholder="Search opportunities..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 pr-10"
+            />
+            {searchQuery && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearSearch}
+                className="absolute right-1 top-1/2 transform -translate-y-1/2 h-8 w-8 p-0"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <Select value={`${sortBy}-${sortOrder}`} onValueChange={handleSortChange}>
+              <SelectTrigger className="w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="created_at-DESC">Newest First</SelectItem>
+                <SelectItem value="created_at-ASC">Oldest First</SelectItem>
+                <SelectItem value="deadline-ASC">Deadline Soon</SelectItem>
+                <SelectItem value="deadline-DESC">Deadline Later</SelectItem>
+                <SelectItem value="name-ASC">Name A-Z</SelectItem>
+                <SelectItem value="name-DESC">Name Z-A</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 
@@ -188,8 +209,8 @@ export default function PaginatedOpportunityList({
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <span>
           {total === 0 
-            ? 'No opportunities found' 
-            : `Showing ${(currentPage - 1) * ITEMS_PER_PAGE + 1}-${Math.min(currentPage * ITEMS_PER_PAGE, total)} of ${total} opportunities`
+            ? `No ${status === 'past' ? 'past' : 'upcoming'} opportunities found`
+            : `Showing ${(currentPage - 1) * ITEMS_PER_PAGE + 1}-${Math.min(currentPage * ITEMS_PER_PAGE, total)} of ${total} ${status === 'past' ? 'past' : 'upcoming'} opportunities`
           }
         </span>
         {debouncedSearchQuery && (
@@ -210,8 +231,10 @@ export default function PaginatedOpportunityList({
         <div className="text-center py-12">
           <div className="text-muted-foreground">
             {debouncedSearchQuery 
-              ? 'No opportunities match your search criteria.' 
-              : 'No opportunities found. Add your first opportunity to get started!'
+              ? `No ${status === 'past' ? 'past' : 'upcoming'} opportunities match your search criteria.` 
+              : status === 'past'
+                ? 'No past opportunities yet. Completed opportunities will appear here.'
+                : 'No upcoming opportunities found. Add your first opportunity to get started!'
             }
           </div>
         </div>

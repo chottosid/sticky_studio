@@ -6,25 +6,35 @@ export async function getOpportunities(
   limit: number = 10, 
   sortBy: string = 'created_at',
   sortOrder: 'ASC' | 'DESC' = 'DESC',
-  searchQuery?: string
+  searchQuery?: string,
+  status?: 'upcoming' | 'past'
 ): Promise<{ opportunities: Opportunity[], total: number, hasMore: boolean }> {
   try {
     const offset = (page - 1) * limit;
     
-    // Build WHERE clause for search
-    let whereClause = '';
-    let queryParams: any[] = [];
+    // Build WHERE clauses
+    const conditions: string[] = [];
+    const queryParams: any[] = [];
     let paramCount = 0;
     
     if (searchQuery && searchQuery.trim()) {
       const searchTerm = searchQuery.trim();
-      whereClause = `WHERE (
-        name ILIKE $${++paramCount} OR 
-        details ILIKE $${++paramCount} OR 
-        COALESCE(deadline::text, '') ILIKE $${++paramCount}
-      )`;
+      conditions.push(`(
+        name ILIKE $${paramCount + 1} OR 
+        details ILIKE $${paramCount + 2} OR 
+        COALESCE(deadline::text, '') ILIKE $${paramCount + 3}
+      )`);
       queryParams.push(`%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`);
+      paramCount += 3;
     }
+
+    if (status === 'upcoming') {
+      conditions.push('(deadline IS NULL OR deadline >= CURRENT_DATE)');
+    } else if (status === 'past') {
+      conditions.push('(deadline IS NOT NULL AND deadline < CURRENT_DATE)');
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     
     // Validate and sanitize sortBy to prevent SQL injection
     const validSortColumns = ['created_at', 'deadline', 'name', 'id'];

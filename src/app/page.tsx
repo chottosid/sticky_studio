@@ -12,7 +12,7 @@ export default async function Home() {
   }
 
   // Load only the first page initially
-  const { opportunities, total } = await getOpportunities(1, 6);
+  const { opportunities, total } = await getOpportunities(1, 6, 'created_at', 'DESC', undefined, 'upcoming');
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-gradient-to-br from-primary/5 via-background to-accent/5">
@@ -25,6 +25,7 @@ export default async function Home() {
         <PaginatedOpportunityList 
           initialOpportunities={opportunities} 
           initialTotal={total}
+          initialStatus="upcoming"
         />
       </main>
     </div>
