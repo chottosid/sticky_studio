@@ -8,8 +8,8 @@
  * - ExtractOpportunityDetailsOutput - The return type for the extractOpportunityDetails function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { ai } from '@/ai/genkit';
+import { z } from 'genkit';
 
 const ExtractOpportunityDetailsInputSchema = z.object({
   documentDataUri: z
@@ -23,7 +23,7 @@ export type ExtractOpportunityDetailsInput = z.infer<typeof ExtractOpportunityDe
 const ExtractOpportunityDetailsOutputSchema = z.object({
   name: z.string().describe('The name of the opportunity (e.g., scholarship, PhD position, competition).'),
   details: z.string().describe('Relevant details about the opportunity.'),
-  deadline: z.string().optional().describe('The application deadline, if available.'),
+  deadline: z.string().optional().describe('The application deadline in YYYY-MM-DD format (e.g., 2024-12-31) or YYYY-MM format.'),
 });
 export type ExtractOpportunityDetailsOutput = z.infer<typeof ExtractOpportunityDetailsOutputSchema>;
 
@@ -35,15 +35,15 @@ export async function extractOpportunityDetails(
 
 const prompt = ai.definePrompt({
   name: 'extractOpportunityDetailsPrompt',
-  input: {schema: ExtractOpportunityDetailsInputSchema},
-  output: {schema: ExtractOpportunityDetailsOutputSchema},
+  input: { schema: ExtractOpportunityDetailsInputSchema },
+  output: { schema: ExtractOpportunityDetailsOutputSchema },
   prompt: `You are an expert at extracting key details from documents related to scholarships, PhD positions, and competitions.
 
   Extract the following information from the document:
 
   - Name: The name of the opportunity (e.g., scholarship, PhD position, competition).
   - Details: Relevant details about the opportunity.
-  - Deadline: The application deadline, if available.  If no deadline is available, omit this field.
+  - Deadline: The application deadline, if available. Format MUST be YYYY-MM-DD (e.g., 2025-01-30) or YYYY-MM. Do NOT use natural language formats like "16th January 2026".
 
   Document: {{media url=documentDataUri}}
   `,
@@ -56,7 +56,7 @@ const extractOpportunityDetailsFlow = ai.defineFlow(
     outputSchema: ExtractOpportunityDetailsOutputSchema,
   },
   async input => {
-    const {output} = await prompt(input);
+    const { output } = await prompt(input);
     return output!;
   }
 );
