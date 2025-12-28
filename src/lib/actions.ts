@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { saveOpportunity, getOpportunities, deleteOpportunity, updateOpportunity } from '@/lib/data';
 import { Opportunity } from './types';
+import { sendNewOpportunityEmail } from '@/lib/email';
 
 const SESSION_COOKIE_NAME = 'session';
 
@@ -59,7 +60,7 @@ export async function logout() {
 const AddOpportunitySchema = z.object({
   name: z.string().min(1, 'Name is required.'),
   details: z.string().min(1, 'Details are required.'),
-  deadline: z.string().optional().nullable().transform(val => val || undefined),
+  deadline: z.string().min(1, 'Deadline is required.'), // Changed to required
   documentUri: z.string().min(1, 'Document URI is missing.'),
   documentType: z.enum(['image', 'pdf', 'text', 'unknown']),
 });
@@ -77,8 +78,13 @@ export async function addOpportunity(input: AddOpportunityInput) {
       errors: parsed.error.flatten().fieldErrors,
     };
   }
-  
-  const { name, details, deadline, documentUri, documentType } = parsed.data;
+
+  let { name, details, deadline, documentUri, documentType } = parsed.data;
+
+  // Handle month-only input (YYYY-MM) -> force to 1st of month
+  if (deadline && /^\d{4}-\d{2}$/.test(deadline)) {
+    deadline = `${deadline}-01`;
+  }
 
   try {
     const newOpportunity = await saveOpportunity({
@@ -88,6 +94,9 @@ export async function addOpportunity(input: AddOpportunityInput) {
       documentUri: documentUri,
       documentType: documentType,
     });
+
+    // Send email notification
+    await sendNewOpportunityEmail(newOpportunity);
 
     revalidatePath('/');
     return { message: `Successfully added "${newOpportunity.name}"!`, success: true };
@@ -150,19 +159,19 @@ export async function updateOpportunityAction(input: UpdateOpportunityInput) {
       errors: parsed.error.flatten().fieldErrors,
     };
   }
-  
+
   const { id, ...updateData } = parsed.data;
 
   try {
     const updatedOpportunity = await updateOpportunity(id, updateData);
-    
+
     if (updatedOpportunity) {
       revalidatePath('/');
       revalidatePath(`/opportunity/${id}`);
-      return { 
-        success: true, 
+      return {
+        success: true,
         message: `Successfully updated "${updatedOpportunity.name}"!`,
-        opportunity: updatedOpportunity 
+        opportunity: updatedOpportunity
       };
     } else {
       return { success: false, message: 'Opportunity not found' };

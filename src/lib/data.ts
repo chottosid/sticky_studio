@@ -2,8 +2,8 @@ import { Opportunity } from '@/lib/types';
 import { query } from './db';
 
 export async function getOpportunities(
-  page: number = 1, 
-  limit: number = 10, 
+  page: number = 1,
+  limit: number = 10,
   sortBy: string = 'created_at',
   sortOrder: 'ASC' | 'DESC' = 'DESC',
   searchQuery?: string,
@@ -11,12 +11,12 @@ export async function getOpportunities(
 ): Promise<{ opportunities: Opportunity[], total: number, hasMore: boolean }> {
   try {
     const offset = (page - 1) * limit;
-    
+
     // Build WHERE clauses
     const conditions: string[] = [];
     const queryParams: any[] = [];
     let paramCount = 0;
-    
+
     if (searchQuery && searchQuery.trim()) {
       const searchTerm = searchQuery.trim();
       conditions.push(`(
@@ -35,12 +35,12 @@ export async function getOpportunities(
     }
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    
+
     // Validate and sanitize sortBy to prevent SQL injection
     const validSortColumns = ['created_at', 'deadline', 'name', 'id'];
     const safeSortBy = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
     const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
-    
+
     // Handle deadline sorting with nulls
     let orderByClause = '';
     if (safeSortBy === 'deadline') {
@@ -48,14 +48,14 @@ export async function getOpportunities(
     } else {
       orderByClause = `ORDER BY ${safeSortBy} ${safeSortOrder}`;
     }
-    
+
     // Get total count
     const countResult = await query(`
       SELECT COUNT(*) as total FROM opportunities ${whereClause}
     `, queryParams);
-    
+
     const total = parseInt(countResult.rows[0].total);
-    
+
     // Get paginated results
     const result = await query(`
       SELECT id, name, details, deadline, document_uri as "documentUri", document_type as "documentType", created_at
@@ -64,7 +64,7 @@ export async function getOpportunities(
       ${orderByClause}
       LIMIT $${++paramCount} OFFSET $${++paramCount}
     `, [...queryParams, limit, offset]);
-    
+
     const opportunities = result.rows.map(row => ({
       id: row.id.toString(),
       name: row.name,
@@ -74,7 +74,7 @@ export async function getOpportunities(
       documentType: row.documentType,
       created_at: row.created_at,
     }));
-    
+
     return {
       opportunities,
       total,
@@ -94,7 +94,7 @@ export async function getAllOpportunities(): Promise<Opportunity[]> {
       FROM opportunities 
       ORDER BY created_at DESC
     `);
-    
+
     return result.rows.map(row => ({
       id: row.id.toString(),
       name: row.name,
@@ -117,11 +117,11 @@ export async function getOpportunityById(id: string): Promise<Opportunity | unde
       FROM opportunities 
       WHERE id = $1
     `, [id]);
-    
+
     if (result.rows.length === 0) {
       return undefined;
     }
-    
+
     const row = result.rows[0];
     return {
       id: row.id.toString(),
@@ -141,8 +141,8 @@ export async function getOpportunityById(id: string): Promise<Opportunity | unde
 export async function saveOpportunity(opportunity: Omit<Opportunity, 'id'>): Promise<Opportunity> {
   try {
     // Convert empty string deadline to null for PostgreSQL
-    const deadline = opportunity.deadline && opportunity.deadline.trim() !== '' 
-      ? opportunity.deadline 
+    const deadline = opportunity.deadline && opportunity.deadline.trim() !== ''
+      ? opportunity.deadline
       : null;
 
     const result = await query(`
@@ -156,7 +156,7 @@ export async function saveOpportunity(opportunity: Omit<Opportunity, 'id'>): Pro
       opportunity.documentUri,
       opportunity.documentType,
     ]);
-    
+
     const row = result.rows[0];
     return {
       id: row.id.toString(),
@@ -179,7 +179,7 @@ export async function deleteOpportunity(id: string): Promise<boolean> {
       WHERE id = $1
       RETURNING id
     `, [id]);
-    
+
     return result.rows.length > 0;
   } catch (error) {
     console.error('Error deleting opportunity:', error);
@@ -198,22 +198,22 @@ export async function updateOpportunity(id: string, opportunity: Partial<Omit<Op
       updateFields.push(`name = $${++paramCount}`);
       values.push(opportunity.name);
     }
-    
+
     if (opportunity.details !== undefined) {
       updateFields.push(`details = $${++paramCount}`);
       values.push(opportunity.details);
     }
-    
+
     if (opportunity.deadline !== undefined) {
       updateFields.push(`deadline = $${++paramCount}`);
       values.push(opportunity.deadline && opportunity.deadline.trim() !== '' ? opportunity.deadline : null);
     }
-    
+
     if (opportunity.documentUri !== undefined) {
       updateFields.push(`document_uri = $${++paramCount}`);
       values.push(opportunity.documentUri);
     }
-    
+
     if (opportunity.documentType !== undefined) {
       updateFields.push(`document_type = $${++paramCount}`);
       values.push(opportunity.documentType);
@@ -225,7 +225,7 @@ export async function updateOpportunity(id: string, opportunity: Partial<Omit<Op
 
     // Add updated_at timestamp
     updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-    
+
     // Add ID parameter
     values.push(id);
 
@@ -235,12 +235,13 @@ export async function updateOpportunity(id: string, opportunity: Partial<Omit<Op
       WHERE id = $${++paramCount}
       RETURNING id, name, details, deadline, document_uri as "documentUri", document_type as "documentType", created_at
     `, values);
-    
+
     if (result.rows.length === 0) {
       return null;
     }
-    
+
     const row = result.rows[0];
+
     return {
       id: row.id.toString(),
       name: row.name,
@@ -253,5 +254,28 @@ export async function updateOpportunity(id: string, opportunity: Partial<Omit<Op
   } catch (error) {
     console.error('Error updating opportunity:', error);
     throw error;
+  }
+}
+
+export async function getOpportunitiesDueOn(dateString: string): Promise<Opportunity[]> {
+  try {
+    const result = await query(`
+      SELECT id, name, details, deadline, document_uri as "documentUri", document_type as "documentType", created_at
+      FROM opportunities 
+      WHERE deadline = $1
+    `, [dateString]);
+
+    return result.rows.map(row => ({
+      id: row.id.toString(),
+      name: row.name,
+      details: row.details,
+      deadline: row.deadline ? (typeof row.deadline === 'string' ? row.deadline : new Date(row.deadline).toISOString().split('T')[0]) : null,
+      documentUri: row.documentUri,
+      documentType: row.documentType,
+      created_at: row.created_at,
+    }));
+  } catch (error) {
+    console.error('Error fetching due opportunities:', error);
+    return [];
   }
 }

@@ -150,18 +150,18 @@ export function AddOpportunityDialog() {
 
     setIsSaving(true);
     const formData = new FormData(formRef.current);
-    
+
     // Get form values and handle null/empty cases properly
     const name = formData.get('name');
     const details = formData.get('details');
     const deadline = formData.get('deadline');
-    
+
     const opportunityData = {
-        name: typeof name === 'string' ? name : '',
-        details: typeof details === 'string' ? details : '',
-        deadline: typeof deadline === 'string' && deadline.trim() !== '' ? deadline : undefined,
-        documentUri: finalDocumentUri,
-        documentType: finalDocumentType
+      name: typeof name === 'string' ? name : '',
+      details: typeof details === 'string' ? details : '',
+      deadline: typeof deadline === 'string' && deadline.trim() !== '' ? deadline : '',
+      documentUri: finalDocumentUri,
+      documentType: finalDocumentType
     }
 
     try {
@@ -294,12 +294,15 @@ export function AddOpportunityDialog() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="deadline">Deadline (YYYY-MM-DD)</Label>
+                  <Label htmlFor="deadline">Deadline (YYYY-MM-DD or YYYY-MM)</Label>
                   <Input
                     id="deadline"
                     name="deadline"
                     defaultValue={extractedData.deadline || ''}
-                    placeholder="No deadline found"
+                    placeholder="YYYY-MM-DD or YYYY-MM"
+                    pattern="\d{4}-\d{2}(-\d{2})?"
+                    title="Format: YYYY-MM-DD or YYYY-MM"
+                    required
                   />
                 </div>
               </div>
