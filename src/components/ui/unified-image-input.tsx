@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Upload, Image as ImageIcon, Loader2, X } from 'lucide-react';
+import { Upload, Image as ImageIcon, Loader2, X, ClipboardPaste } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
@@ -39,7 +39,7 @@ export function UnifiedImageInput({
     reader.onload = (event) => {
       const dataUri = event.target?.result as string;
       let fileType: 'image' | 'pdf' | 'unknown' = 'unknown';
-      
+
       if (file.type.startsWith('image/')) {
         fileType = 'image';
       } else if (file.type === 'application/pdf') {
@@ -77,12 +77,12 @@ export function UnifiedImageInput({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    
+
     if (disabled) return;
 
     const files = Array.from(e.dataTransfer.files);
     const file = files[0];
-    
+
     if (file) {
       // Check if it's an allowed file type
       if (file.type.startsWith('image/') || file.type === 'application/pdf') {
@@ -126,10 +126,10 @@ export function UnifiedImageInput({
   // Handle paste event on the container
   const handleContainerPaste = React.useCallback((e: React.ClipboardEvent) => {
     if (disabled) return;
-    
+
     const items = Array.from(e.clipboardData.items);
     const imageItem = items.find(item => item.type.startsWith('image/'));
-    
+
     if (imageItem) {
       e.preventDefault();
       const file = imageItem.getAsFile();
@@ -143,10 +143,44 @@ export function UnifiedImageInput({
     }
   }, [disabled, processFile, toast]);
 
+  const handleManualPaste = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (disabled) return;
+
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const imageType = item.types.find(type => type.startsWith('image/'));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          const file = new File([blob], `pasted-image-${Date.now()}.png`, { type: imageType });
+          processFile(file);
+          toast({
+            title: 'Image Pasted!',
+            description: 'Image has been pasted from clipboard.',
+          });
+          return;
+        }
+      }
+      toast({
+        variant: 'destructive',
+        title: 'No Image Found',
+        description: 'No image was found in your clipboard.',
+      });
+    } catch (err) {
+      console.error('Failed to read clipboard:', err);
+      toast({
+        variant: 'destructive',
+        title: 'Paste Failed',
+        description: 'Unable to access clipboard. Please try Ctrl+V instead.',
+      });
+    }
+  };
+
   return (
     <div className={cn('w-full', className)}>
       <Label htmlFor="unified-file-input">Document (PDF or Image)</Label>
-      
+
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -196,7 +230,7 @@ export function UnifiedImageInput({
                 <X className="h-4 w-4" />
               </Button>
             </div>
-            
+
             {selectedFile.type === 'image' && (
               <div className="max-w-full max-h-32 overflow-hidden rounded border">
                 <img
@@ -218,24 +252,35 @@ export function UnifiedImageInput({
                 Click to browse or drag & drop files
               </p>
             </div>
-            
-            <div className="flex justify-center">
+
+            <div className="flex flex-wrap justify-center gap-2">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={handleUploadClick}
                 disabled={disabled}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 min-h-10 sm:min-h-0 px-4"
               >
                 <Upload className="h-4 w-4" />
                 Browse Files
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={handleManualPaste}
+                disabled={disabled}
+                className="flex items-center gap-2 min-h-10 sm:min-h-0 px-4"
+              >
+                <ClipboardPaste className="h-4 w-4" />
+                Paste Image
               </Button>
             </div>
           </>
         )}
       </div>
-      
+
       {!selectedFile && (
         <p className="text-xs text-muted-foreground mt-2 text-center">
           Supports JPG, PNG, GIF, PDF files. You can also paste images directly with Ctrl+V.

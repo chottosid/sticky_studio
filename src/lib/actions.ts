@@ -6,7 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { saveOpportunity, getOpportunities, deleteOpportunity, updateOpportunity } from '@/lib/data';
 import { Opportunity } from './types';
-import { sendNewOpportunityEmail } from '@/lib/email';
+import { sendNewOpportunityEmail, sendTestEmail } from '@/lib/email';
 
 const SESSION_COOKIE_NAME = 'session';
 
@@ -179,5 +179,23 @@ export async function updateOpportunityAction(input: UpdateOpportunityInput) {
   } catch (error) {
     console.error('Update failed:', error);
     return { message: 'Failed to update the opportunity. Please try again.', success: false };
+  }
+}
+
+export async function sendTestEmailAction() {
+  if (!(await isAuthenticated())) {
+    return { success: false, message: 'Unauthorized' };
+  }
+
+  try {
+    const info = await sendTestEmail();
+    if (info) {
+      return { success: true, message: 'Test email sent successfully! Check your configured inbox.' };
+    } else {
+      return { success: false, message: 'Failed to send test email. Check server logs for details.' };
+    }
+  } catch (error) {
+    console.error('Test email action failed:', error);
+    return { success: false, message: 'An error occurred while sending the test email.' };
   }
 }

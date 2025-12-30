@@ -12,12 +12,18 @@ export async function sendEmail(subject: string, html: string) {
     },
   });
 
-  const recipients = process.env.RECIPIENT_EMAILS?.split(',') || [];
-  
+  const recipientsRaw = process.env.RECIPIENT_EMAILS || '';
+  const recipients = recipientsRaw.split(',').map(email => email.trim()).filter(Boolean);
+
   if (recipients.length === 0) {
-    console.warn('No recipient emails configured (RECIPIENT_EMAILS in .env)');
+    console.warn('No recipient emails configured (RECIPIENT_EMAILS in .env). Email will not be sent.');
     return;
   }
+
+  console.log(`Attempting to send email to: ${recipients.join(', ')}`);
+  console.log(`SMTP Host: ${process.env.SMTP_HOST || 'smtp.gmail.com'}`);
+  console.log(`SMTP User: ${process.env.SMTP_USER}`);
+
 
   try {
     const info = await transporter.sendMail({
@@ -50,4 +56,17 @@ export async function sendNewOpportunityEmail(opportunity: Opportunity) {
     </div>
   `;
   await sendEmail(subject, html);
+}
+
+export async function sendTestEmail() {
+  const subject = 'Sticky Studio: Test Email';
+  const html = `
+    <div style="font-family: Arial, sans-serif; padding: 20px;">
+      <h2>Test Email Successful!</h2>
+      <p>This email was sent to verify your SMTP configuration.</p>
+      <p><strong>Sent at:</strong> ${new Date().toLocaleString()}</p>
+      <p><strong>Configured Recipients:</strong> ${process.env.RECIPIENT_EMAILS}</p>
+    </div>
+  `;
+  return await sendEmail(subject, html);
 }

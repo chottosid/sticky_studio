@@ -10,6 +10,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
+import { format } from 'date-fns';
 
 const ExtractOpportunityDetailsInputSchema = z.object({
   documentDataUri: z
@@ -23,40 +24,91 @@ export type ExtractOpportunityDetailsInput = z.infer<typeof ExtractOpportunityDe
 const ExtractOpportunityDetailsOutputSchema = z.object({
   name: z.string().describe('The name of the opportunity (e.g., scholarship, PhD position, competition).'),
   details: z.string().describe('Relevant details about the opportunity.'),
-  deadline: z.string().optional().describe('The application deadline in YYYY-MM-DD format (e.g., 2024-12-31) or YYYY-MM format.'),
+  deadline: z.string().optional().describe('The application deadline in YYYY-MM-DD format or YYYY-MM format.'),
 });
 export type ExtractOpportunityDetailsOutput = z.infer<typeof ExtractOpportunityDetailsOutputSchema>;
+
+// Layer 1: Raw Extraction JSON schema
+const RawExtractionSchema = z.object({
+  name: z.string(),
+  details: z.string(),
+  rawDeadline: z.string().optional().describe('The deadline as mentioned in the text (e.g. "next Friday", "16th Jan 2026", "rolling basis").'),
+});
+
+// Layer 2: Date Parsing Prompt
+const parseDatePrompt = ai.definePrompt({
+  name: 'parseDatePrompt',
+  input: {
+    schema: z.object({
+      rawDeadline: z.string(),
+      today: z.string(),
+    }),
+  },
+  output: {
+    schema: z.object({
+      parsedDate: z.string().optional().describe('The parsed date in YYYY-MM-DD or YYYY-MM format. Empty if unparseable or rolling.'),
+    }),
+  },
+  prompt: `You are a date parsing expert. 
+  Given a raw deadline string and today's date, return the deadline in YYYY-MM-DD or YYYY-MM format.
+  If the deadline is "rolling" or unclear, return an empty string.
+  
+  Today's Date: {{today}}
+  Raw Deadline: {{rawDeadline}}
+  `,
+});
+
+const rawExtractPrompt = ai.definePrompt({
+  name: 'rawExtractPrompt',
+  input: { schema: ExtractOpportunityDetailsInputSchema },
+  output: { schema: RawExtractionSchema },
+  prompt: `You are an expert at extracting key details from documents related to scholarships and opportunities.
+  
+  Extract:
+  - name: Name of the opportunity.
+  - details: Summary of key details.
+  - rawDeadline: The deadline exactly as mentioned or described in the text.
+  
+  Document: {{media url=documentDataUri}}
+  `,
+});
+
+export const extractOpportunityDetailsFlow = ai.defineFlow(
+  {
+    name: 'extractOpportunityDetailsFlow',
+    inputSchema: ExtractOpportunityDetailsInputSchema,
+    outputSchema: ExtractOpportunityDetailsOutputSchema,
+  },
+  async (input) => {
+    // Layer 1: Extract Raw Info
+    const { output: rawData } = await rawExtractPrompt(input);
+
+    if (!rawData) {
+      throw new Error('Failed to extract raw data');
+    }
+
+    let structuredDeadline = '';
+
+    // Layer 2: Parse Date if rawDeadline exists
+    if (rawData.rawDeadline && rawData.rawDeadline.trim() !== '') {
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const { output: dateResult } = await parseDatePrompt({
+        rawDeadline: rawData.rawDeadline,
+        today,
+      });
+      structuredDeadline = dateResult?.parsedDate || '';
+    }
+
+    return {
+      name: rawData.name,
+      details: rawData.details,
+      deadline: structuredDeadline,
+    };
+  }
+);
 
 export async function extractOpportunityDetails(
   input: ExtractOpportunityDetailsInput
 ): Promise<ExtractOpportunityDetailsOutput> {
   return extractOpportunityDetailsFlow(input);
 }
-
-const prompt = ai.definePrompt({
-  name: 'extractOpportunityDetailsPrompt',
-  input: { schema: ExtractOpportunityDetailsInputSchema },
-  output: { schema: ExtractOpportunityDetailsOutputSchema },
-  prompt: `You are an expert at extracting key details from documents related to scholarships, PhD positions, and competitions.
-
-  Extract the following information from the document:
-
-  - Name: The name of the opportunity (e.g., scholarship, PhD position, competition).
-  - Details: Relevant details about the opportunity.
-  - Deadline: The application deadline, if available. Format MUST be YYYY-MM-DD (e.g., 2025-01-30) or YYYY-MM. Do NOT use natural language formats like "16th January 2026".
-
-  Document: {{media url=documentDataUri}}
-  `,
-});
-
-const extractOpportunityDetailsFlow = ai.defineFlow(
-  {
-    name: 'extractOpportunityDetailsFlow',
-    inputSchema: ExtractOpportunityDetailsInputSchema,
-    outputSchema: ExtractOpportunityDetailsOutputSchema,
-  },
-  async input => {
-    const { output } = await prompt(input);
-    return output!;
-  }
-);
