@@ -195,6 +195,10 @@ export async function updateOpportunity(id: string, opportunity: Partial<Omit<Op
     if (opportunity.deadline !== undefined) {
       updateFields.push(`deadline = $${++paramCount}`);
       values.push(opportunity.deadline && opportunity.deadline.trim() !== '' ? opportunity.deadline : null);
+      // Reset reminder flags when deadline changes
+      updateFields.push(`reminder_7_sent = false`);
+      updateFields.push(`reminder_3_sent = false`);
+      updateFields.push(`reminder_1_sent = false`);
     }
 
     if (opportunity.documentUri !== undefined) {
