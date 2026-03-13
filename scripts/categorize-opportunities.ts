@@ -4,13 +4,17 @@ import { query } from '../src/lib/db';
 
 // Gemini client
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const MODEL = 'gemini-1.5-flash-8b-latest';
+
+// Models to try in order (primary -> fallbacks)
+const MODELS = [
+  'gemini-3-flash',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+];
 
 type OpportunityCategory = 'job' | 'internship' | 'contest' | 'higher-study';
 
 async function categorizeOpportunity(name: string, details: string): Promise<OpportunityCategory> {
-  const model = genAI.getGenerativeModel({ model: MODEL });
-
   const prompt = `You are a classifier. Categorize the opportunity into exactly one of these categories:
 - "job": Full-time employment, career positions
 - "internship": Student internships, co-ops
@@ -25,23 +29,36 @@ Details: ${details}
 
 Category:`;
 
-  try {
-    const result = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0, maxOutputTokens: 20 },
-    });
+  const validCategories: OpportunityCategory[] = ['job', 'internship', 'contest', 'higher-study'];
 
-    const category = result.response.text().trim().toLowerCase() as OpportunityCategory;
-    const validCategories: OpportunityCategory[] = ['job', 'internship', 'contest', 'higher-study'];
+  // Try each model in sequence
+  for (const modelName of MODELS) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelName });
 
-    if (validCategories.includes(category)) {
-      return category;
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0, maxOutputTokens: 20 },
+      });
+
+      const category = result.response.text().trim().toLowerCase() as OpportunityCategory;
+
+      if (validCategories.includes(category)) {
+        return category;
+      }
+      return 'job';
+    } catch (error) {
+      const isRateLimit = (error as { status?: number })?.status === 429;
+      if (isRateLimit) {
+        console.warn(`Model ${modelName} rate limited, trying next...`);
+        continue;
+      }
+      console.error(`Model ${modelName} failed:`, error);
     }
-    return 'job';
-  } catch (error) {
-    console.error('Gemini error:', error);
-    return 'job';
   }
+
+  console.error('All models failed, defaulting to "job"');
+  return 'job';
 }
 
 async function main() {

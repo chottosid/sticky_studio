@@ -6,12 +6,16 @@ import { OpportunityCategory } from '@/lib/types';
 // Gemini client
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-// Use Gemini 1.5 Flash 8B (smaller, different quota limits)
-const MODEL = 'gemini-1.5-flash-8b-latest';
+// Models to try in order (primary -> fallbacks)
+const MODELS = [
+  'gemini-3-flash',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+];
 
-// Helper: call Gemini with JSON response
-async function ask(system: string, user: string): Promise<Record<string, unknown>> {
-  const model = genAI.getGenerativeModel({ model: MODEL });
+// Helper: try a model with JSON response
+async function tryModel(modelName: string, system: string, user: string): Promise<Record<string, unknown>> {
+  const model = genAI.getGenerativeModel({ model: modelName });
 
   const result = await model.generateContent({
     contents: [
@@ -30,9 +34,9 @@ async function ask(system: string, user: string): Promise<Record<string, unknown
   return JSON.parse(response || '{}');
 }
 
-// Helper: call Gemini with image support
-async function askWithImage(system: string, imageDataUri: string, prompt: string): Promise<Record<string, unknown>> {
-  const model = genAI.getGenerativeModel({ model: MODEL });
+// Helper: try a model with image support
+async function tryModelWithImage(modelName: string, system: string, imageDataUri: string, prompt: string): Promise<Record<string, unknown>> {
+  const model = genAI.getGenerativeModel({ model: modelName });
 
   // Extract base64 data and mime type from data URI
   const [metadata, base64Data] = imageDataUri.split(';base64,');
@@ -61,6 +65,50 @@ async function askWithImage(system: string, imageDataUri: string, prompt: string
 
   const response = result.response.text();
   return JSON.parse(response || '{}');
+}
+
+// Helper: call Gemini with fallback models
+async function ask(system: string, user: string): Promise<Record<string, unknown>> {
+  let lastError: Error | null = null;
+
+  for (const modelName of MODELS) {
+    try {
+      return await tryModel(modelName, system, user);
+    } catch (error) {
+      lastError = error as Error;
+      const isRateLimit = (error as { status?: number })?.status === 429;
+      if (isRateLimit) {
+        console.warn(`Model ${modelName} rate limited, trying next...`);
+        continue;
+      }
+      console.error(`Model ${modelName} failed:`, error);
+      throw error;
+    }
+  }
+
+  throw lastError || new Error('All models failed');
+}
+
+// Helper: call Gemini with image and fallback models
+async function askWithImage(system: string, imageDataUri: string, prompt: string): Promise<Record<string, unknown>> {
+  let lastError: Error | null = null;
+
+  for (const modelName of MODELS) {
+    try {
+      return await tryModelWithImage(modelName, system, imageDataUri, prompt);
+    } catch (error) {
+      lastError = error as Error;
+      const isRateLimit = (error as { status?: number })?.status === 429;
+      if (isRateLimit) {
+        console.warn(`Model ${modelName} rate limited, trying next...`);
+        continue;
+      }
+      console.error(`Model ${modelName} failed:`, error);
+      throw error;
+    }
+  }
+
+  throw lastError || new Error('All models failed');
 }
 
 // Helper: build message content from data URI
