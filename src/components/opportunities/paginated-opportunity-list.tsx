@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ChevronLeft, ChevronRight, Search, X, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { getOpportunitiesAction } from '@/lib/actions';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useSearchParams } from 'next/navigation';
 
 // Simple debounce hook inline
 function useDebounce<T>(value: T, delay: number): T {
@@ -47,6 +48,7 @@ export default function PaginatedOpportunityList({
   initialStatus = 'upcoming',
   initialCategory
 }: PaginatedOpportunityListProps) {
+  const searchParams = useSearchParams();
   const [opportunities, setOpportunities] = useState<Opportunity[]>(initialOpportunities);
   const [currentPage, setCurrentPage] = useState(1);
   const [total, setTotal] = useState(initialTotal);
@@ -56,6 +58,14 @@ export default function PaginatedOpportunityList({
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState<FilterStatus>(initialStatus);
   const [category, setCategory] = useState<OpportunityCategory | undefined>(initialCategory);
+
+  // Sync category with URL params for instant tab switching
+  useEffect(() => {
+    const urlCategory = searchParams.get('category') as OpportunityCategory | null;
+    const validCategories: OpportunityCategory[] = ['job', 'internship', 'contest', 'higher-study'];
+    const newCategory = urlCategory && validCategories.includes(urlCategory) ? urlCategory : undefined;
+    setCategory(newCategory);
+  }, [searchParams]);
 
   // Debounce search query to avoid too many API calls
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
@@ -158,8 +168,19 @@ export default function PaginatedOpportunityList({
     'higher-study': 'Higher Study'
   }[category] : '';
 
+  const pageTitle = category ? categoryLabel : 'Your Opportunities';
+  const pageDescription = category
+    ? `Manage your ${pageTitle.toLowerCase()}`
+    : 'Manage your scholarships, PhD positions, and competitions';
+
   return (
     <div className="space-y-6">
+      {/* Dynamic Title */}
+      <div className="space-y-2">
+        <h1 className="font-headline text-3xl font-bold text-primary">{pageTitle}</h1>
+        <p className="text-muted-foreground">{pageDescription}</p>
+      </div>
+
       <div className="flex flex-col gap-4">
         <Tabs
           value={status}

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import { Gem, LogOut, Menu, Briefcase, GraduationCap, Trophy, BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AddOpportunityDialog } from '@/components/opportunities/add-opportunity-dialog';
@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { OpportunityCategory } from '@/lib/types';
+import { useCallback, useState } from 'react';
 
 const categories: { value: OpportunityCategory; label: string; icon: React.ReactNode }[] = [
   { value: 'job', label: 'Jobs', icon: <Briefcase className="h-4 w-4" /> },
@@ -26,12 +27,27 @@ const categories: { value: OpportunityCategory; label: string; icon: React.React
 export default function Header() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const currentCategory = searchParams.get('category') as OpportunityCategory | null;
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Client-side category switch - updates URL without full page reload
+  const handleCategoryChange = useCallback((category: OpportunityCategory | null) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (category) {
+      params.set('category', category);
+    } else {
+      params.delete('category');
+    }
+    const newUrl = params.toString() ? `/?${params.toString()}` : '/';
+    router.replace(newUrl, { scroll: false });
+    setMobileMenuOpen(false); // Close mobile menu on selection
+  }, [router, searchParams]);
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-gradient-to-r from-primary/10 via-background to-accent/10 backdrop-blur-sm px-4 md:px-6 shadow-sm">
       {/* Mobile Menu */}
-      <Sheet>
+      <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
         <SheetTrigger asChild>
           <Button variant="ghost" size="icon" className="md:hidden">
             <Menu className="h-5 w-5" />
@@ -51,11 +67,11 @@ export default function Header() {
           </SheetHeader>
           <nav className="flex flex-col gap-2 mt-6">
             {categories.map((category) => (
-              <Link
+              <button
                 key={category.value}
-                href={`/?category=${category.value}`}
+                onClick={() => handleCategoryChange(category.value)}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-left",
                   currentCategory === category.value
                     ? "bg-primary text-primary-foreground"
                     : "hover:bg-muted"
@@ -63,18 +79,18 @@ export default function Header() {
               >
                 {category.icon}
                 {category.label}
-              </Link>
+              </button>
             ))}
-            <Link
-              href="/"
+            <button
+              onClick={() => handleCategoryChange(null)}
               className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-left",
                 !currentCategory && "bg-primary text-primary-foreground hover:bg-primary/90"
               )}
             >
               <Gem className="h-4 w-4" />
               All Opportunities
-            </Link>
+            </button>
           </nav>
         </SheetContent>
       </Sheet>
@@ -94,9 +110,9 @@ export default function Header() {
       {/* Desktop Navigation */}
       <nav className="hidden md:flex items-center gap-1 ml-4">
         {categories.map((category) => (
-          <Link
+          <button
             key={category.value}
-            href={`/?category=${category.value}`}
+            onClick={() => handleCategoryChange(category.value)}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
               currentCategory === category.value
@@ -106,10 +122,10 @@ export default function Header() {
           >
             {category.icon}
             <span className="hidden lg:inline">{category.label}</span>
-          </Link>
+          </button>
         ))}
-        <Link
-          href="/"
+        <button
+          onClick={() => handleCategoryChange(null)}
           className={cn(
             "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
             !currentCategory && pathname === "/" && "bg-primary text-primary-foreground"
@@ -117,7 +133,7 @@ export default function Header() {
         >
           <Gem className="h-4 w-4" />
           <span className="hidden lg:inline">All</span>
-        </Link>
+        </button>
       </nav>
 
       {/* Right side actions */}
