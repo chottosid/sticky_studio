@@ -11,19 +11,38 @@ const MODEL = 'gemma-3-27b-it';
 
 // Helper: strip markdown code blocks from response
 function stripMarkdown(text: string): string {
-  // Remove ```json ... ``` or ``` ... ``` blocks
   let cleaned = text.trim();
+
+  // Remove ```json ... ``` or ``` ... ``` blocks
   if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/,'');
+    // Remove opening ```json or ```
+    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, '');
+    // Remove closing ```
+    const lastBacktickIndex = cleaned.lastIndexOf('```');
+    if (lastBacktickIndex !== -1) {
+      cleaned = cleaned.substring(0, lastBacktickIndex);
+    }
   }
+
   return cleaned.trim();
+}
+
+// Helper: extract first object from potentially array response
+function extractObject(data: unknown): Record<string, unknown> {
+  if (Array.isArray(data) && data.length > 0) {
+    return data[0] as Record<string, unknown>;
+  }
+  if (typeof data === 'object' && data !== null) {
+    return data as Record<string, unknown>;
+  }
+  return {};
 }
 
 // Helper: try model with JSON response
 async function tryModel(system: string, user: string): Promise<Record<string, unknown>> {
   const response = await ai.models.generateContent({
     model: MODEL,
-    contents: `${system}\n\n${user}\n\nReturn ONLY valid JSON, no markdown code blocks.`,
+    contents: `${system}\n\n${user}\n\nReturn ONLY valid JSON object (not array), no markdown code blocks.`,
   });
 
   const text = response.text;
@@ -35,7 +54,8 @@ async function tryModel(system: string, user: string): Promise<Record<string, un
   const cleanedText = stripMarkdown(text);
 
   try {
-    return JSON.parse(cleanedText);
+    const parsed = JSON.parse(cleanedText);
+    return extractObject(parsed);
   } catch (parseError) {
     console.error('Failed to parse JSON response:', cleanedText);
     throw new Error(`Invalid JSON response: ${cleanedText.substring(0, 100)}`);
@@ -75,7 +95,8 @@ async function tryModelWithImage(system: string, imageDataUri: string, prompt: s
   const cleanedText = stripMarkdown(text);
 
   try {
-    return JSON.parse(cleanedText);
+    const parsed = JSON.parse(cleanedText);
+    return extractObject(parsed);
   } catch (parseError) {
     console.error('Failed to parse JSON response from image:', cleanedText);
     throw new Error(`Invalid JSON response: ${cleanedText.substring(0, 100)}`);
