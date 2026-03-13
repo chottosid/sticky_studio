@@ -6,8 +6,8 @@ import { OpportunityCategory } from '@/lib/types';
 // Gemini client
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-// Use Gemini 2.0 Flash (fast and free tier available)
-const MODEL = 'gemini-2.0-flash';
+// Use Gemini 1.5 Flash 8B (smaller, different quota limits)
+const MODEL = 'gemini-1.5-flash-8b-latest';
 
 // Helper: call Gemini with JSON response
 async function ask(system: string, user: string): Promise<Record<string, unknown>> {
