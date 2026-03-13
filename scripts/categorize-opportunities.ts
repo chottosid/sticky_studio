@@ -7,7 +7,8 @@ const client = new OpenAI({
   baseURL: 'https://openrouter.ai/api/v1',
 });
 
-const MODEL = 'openrouter/healer-alpha';
+const PRIMARY_MODEL = 'google/gemma-3-27b-it:free';
+const FALLBACK_MODEL = 'mistralai/mistral-small-3.1-24b-instruct:free';
 
 type OpportunityCategory = 'job' | 'internship' | 'contest' | 'higher-study';
 
@@ -19,9 +20,12 @@ async function categorizeOpportunity(name: string, details: string): Promise<Opp
 
 Return ONLY the category name (job/internship/contest/higher-study), nothing else.`;
 
+  const validCategories: OpportunityCategory[] = ['job', 'internship', 'contest', 'higher-study'];
+
+  // Try primary model first
   try {
     const res = await client.chat.completions.create({
-      model: MODEL,
+      model: PRIMARY_MODEL,
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: `Name: ${name}\n\nDetails: ${details}\n\nCategory:` },
@@ -31,15 +35,33 @@ Return ONLY the category name (job/internship/contest/higher-study), nothing els
     });
 
     const category = res.choices[0]?.message?.content?.trim().toLowerCase() as OpportunityCategory;
-    const validCategories: OpportunityCategory[] = ['job', 'internship', 'contest', 'higher-study'];
-
     if (validCategories.includes(category)) {
       return category;
     }
     return 'job';
   } catch (error) {
-    console.error('LLM error:', error);
-    return 'job';
+    // Try fallback model
+    console.error(`Primary model (${PRIMARY_MODEL}) failed, trying fallback:`, error);
+    try {
+      const res = await client.chat.completions.create({
+        model: FALLBACK_MODEL,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: `Name: ${name}\n\nDetails: ${details}\n\nCategory:` },
+        ],
+        temperature: 0,
+        max_tokens: 20,
+      });
+
+      const category = res.choices[0]?.message?.content?.trim().toLowerCase() as OpportunityCategory;
+      if (validCategories.includes(category)) {
+        return category;
+      }
+      return 'job';
+    } catch (fallbackError) {
+      console.error('Fallback model also failed:', fallbackError);
+      return 'job';
+    }
   }
 }
 

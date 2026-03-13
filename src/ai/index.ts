@@ -9,20 +9,35 @@ const client = new OpenAI({
   baseURL: 'https://openrouter.ai/api/v1',
 });
 
-const MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+const PRIMARY_MODEL = 'google/gemma-3-27b-it:free';
+const FALLBACK_MODEL = 'mistralai/mistral-small-3.1-24b-instruct:free';
 
-// Helper: call AI with JSON response
+// Helper: call AI with JSON response, with fallback
 async function ask(system: string, user: string): Promise<Record<string, unknown>> {
-  const res = await client.chat.completions.create({
-    model: MODEL,
-    messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: user },
-    ],
-    response_format: { type: 'json_object' },
-    temperature: 0,
-  });
-  return JSON.parse(res.choices[0]?.message?.content || '{}');
+  try {
+    const res = await client.chat.completions.create({
+      model: PRIMARY_MODEL,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0,
+    });
+    return JSON.parse(res.choices[0]?.message?.content || '{}');
+  } catch (error) {
+    console.error(`Primary model (${PRIMARY_MODEL}) failed, trying fallback:`, error);
+    const res = await client.chat.completions.create({
+      model: FALLBACK_MODEL,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0,
+    });
+    return JSON.parse(res.choices[0]?.message?.content || '{}');
+  }
 }
 
 // Helper: build message content from data URI
@@ -71,22 +86,42 @@ Today is ${today}. Parse relative dates like "next Friday" into exact dates.`;
 
   // For images, use vision
   if (input.documentDataUri.startsWith('data:image/')) {
-    const res = await client.chat.completions.create({
-      model: MODEL,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user as unknown as string },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0,
-    });
-    const data = JSON.parse(res.choices[0]?.message?.content || '{}');
-    return {
-      name: data.name || '',
-      details: data.details || '',
-      deadline: data.deadline || undefined,
-      category: validateCategory(data.category)
-    };
+    try {
+      const res = await client.chat.completions.create({
+        model: PRIMARY_MODEL,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user as unknown as string },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0,
+      });
+      const data = JSON.parse(res.choices[0]?.message?.content || '{}');
+      return {
+        name: data.name || '',
+        details: data.details || '',
+        deadline: data.deadline || undefined,
+        category: validateCategory(data.category)
+      };
+    } catch (error) {
+      console.error(`Primary model (${PRIMARY_MODEL}) failed, trying fallback:`, error);
+      const res = await client.chat.completions.create({
+        model: FALLBACK_MODEL,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user as unknown as string },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0,
+      });
+      const data = JSON.parse(res.choices[0]?.message?.content || '{}');
+      return {
+        name: data.name || '',
+        details: data.details || '',
+        deadline: data.deadline || undefined,
+        category: validateCategory(data.category)
+      };
+    }
   }
 
   const data = await ask(system, user as string);
