@@ -4,67 +4,43 @@ import { query } from '../src/lib/db';
 
 // Gemini client
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-
-// Models to try in order (primary -> fallbacks)
-const MODELS = [
-  'gemini-3-flash-preview',
-  'gemini-2.5-flash-preview',
-  'gemini-2.5-flash-lite-preview',
-];
+const MODEL = 'gemma-3-27b-it';
 
 type OpportunityCategory = 'job' | 'internship' | 'contest' | 'higher-study';
 
 async function categorizeOpportunity(name: string, details: string): Promise<OpportunityCategory> {
-  const prompt = `You are a classifier. Categorize the opportunity into exactly one of these categories:
-- "job": Full-time employment, career positions
-- "internship": Student internships, co-ops
-- "contest": Competitions, hackathons, awards
-- "higher-study": PhD, masters, scholarships, fellowships, research positions
+  const prompt = `Categorize this opportunity into exactly one category:
+- job: Full-time employment, career positions
+- internship: Student internships, co-ops
+- contest: Competitions, hackathons, awards
+- higher-study: PhD positions, masters programs, scholarships, fellowships
 
-Return ONLY the category name (job/internship/contest/higher-study), nothing else.
+Return ONLY the category name, nothing else.
 
 Name: ${name}
-
-Details: ${details}
-
-Category:`;
+Details: ${details}`;
 
   const validCategories: OpportunityCategory[] = ['job', 'internship', 'contest', 'higher-study'];
 
-  // Try each model in sequence
-  for (const modelName of MODELS) {
-    try {
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: prompt,
-        config: {
-          temperature: 0,
-          maxOutputTokens: 20,
-        },
-      });
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: prompt,
+    });
 
-      const category = response.text?.trim().toLowerCase() as OpportunityCategory;
-      if (validCategories.includes(category)) {
-        return category;
-      }
-      return 'job';
-    } catch (error) {
-      const errorMessage = (error as Error).message || String(error);
-      const isRateLimit = errorMessage.includes('429') || errorMessage.includes('quota');
-      if (isRateLimit) {
-        console.warn(`Model ${modelName} rate limited, trying next...`);
-        continue;
-      }
-      console.error(`Model ${modelName} failed:`, error);
+    const category = response.text?.trim().toLowerCase() as OpportunityCategory;
+    if (validCategories.includes(category)) {
+      return category;
     }
+    return 'job';
+  } catch (error) {
+    console.error('Gemma error:', error);
+    return 'job';
   }
-
-  console.error('All models failed, defaulting to "job"');
-  return 'job';
 }
 
 async function main() {
-  console.log('🔍 Fetching all opportunities...\n');
+  console.log('Fetching all opportunities...\n');
 
   const result = await query(`
     SELECT id, name, details, category
@@ -79,15 +55,14 @@ async function main() {
     return;
   }
 
-  console.log(`📋 Found ${opportunities.length} opportunities to categorize\n`);
-  console.log('Starting Gemini-based categorization...\n');
+  console.log(`Found ${opportunities.length} opportunities to categorize\n`);
+  console.log('Starting Gemma-based categorization...\n');
 
   const stats = {
     total: opportunities.length,
     updated: 0,
     unchanged: 0,
     failed: 0,
-    errors: 0,
     byCategory: { job: 0, internship: 0, contest: 0, 'higher-study': 0 }
   };
 
@@ -101,43 +76,43 @@ async function main() {
     stats.byCategory[category]++;
 
     if (category !== opp.category) {
-      process.stdout.write(` (${opp.category} → ${category})`);
+      process.stdout.write(` (${opp.category} -> ${category})`);
       try {
         await query(`UPDATE opportunities SET category = $1 WHERE id = $2`, [category, opp.id]);
-        console.log(' ✅');
+        console.log(' OK');
         stats.updated++;
       } catch (error) {
-        console.log(' ❌ DB error');
+        console.log(' DB error');
         stats.failed++;
       }
     } else {
-      console.log(` (${opp.category} ✓)`);
+      console.log(` (${opp.category} unchanged)`);
       stats.unchanged++;
     }
 
-    // Rate limiting delay
-    await new Promise(resolve => setTimeout(resolve, 200));
+    // Small delay to avoid rate limits
+    await new Promise(resolve => setTimeout(resolve, 100));
   }
 
-  console.log('\n' + '═'.repeat(50));
-  console.log('📊 Summary:');
-  console.log('═'.repeat(50));
+  console.log('\n' + '='.repeat(50));
+  console.log('Summary:');
+  console.log('='.repeat(50));
   console.log(`   Total processed: ${stats.total}`);
-  console.log(`   ✅ Updated: ${stats.updated}`);
-  console.log(`   ✓ Unchanged: ${stats.unchanged}`);
-  console.log(`   ❌ Failed: ${stats.failed}`);
-  console.log('─'.repeat(50));
-  console.log('New Distribution:');
+  console.log(`   Updated: ${stats.updated}`);
+  console.log(`   Unchanged: ${stats.unchanged}`);
+  console.log(`   Failed: ${stats.failed}`);
+  console.log('-'.repeat(50));
+  console.log('Distribution:');
   console.log(`   job: ${stats.byCategory.job}`);
   console.log(`   internship: ${stats.byCategory.internship}`);
   console.log(`   contest: ${stats.byCategory.contest}`);
   console.log(`   higher-study: ${stats.byCategory['higher-study']}`);
-  console.log('═'.repeat(50));
+  console.log('='.repeat(50));
 }
 
 main()
   .then(() => {
-    console.log('\n🎉 Done!');
+    console.log('\nDone!');
     process.exit(0);
   })
   .catch((error) => {

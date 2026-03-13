@@ -6,124 +6,80 @@ import { OpportunityCategory } from '@/lib/types';
 // Gemini client
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
-// Models to try in order (primary -> fallbacks)
-const MODELS = [
-  'gemini-3-flash-preview',
-  'gemini-2.5-flash-preview',
-  'gemini-2.5-flash-lite-preview',
-];
+// Use Gemma 3 27B (higher rate limits)
+const MODEL = 'gemma-3-27b-it';
 
-// Helper: try a model with JSON response (text only)
-async function tryModel(modelName: string, system: string, user: string): Promise<Record<string, unknown>> {
+// Helper: strip markdown code blocks from response
+function stripMarkdown(text: string): string {
+  // Remove ```json ... ``` or ``` ... ``` blocks
+  let cleaned = text.trim();
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/,'');
+  }
+  return cleaned.trim();
+}
+
+// Helper: try model with JSON response
+async function tryModel(system: string, user: string): Promise<Record<string, unknown>> {
   const response = await ai.models.generateContent({
-    model: modelName,
-    contents: `${system}\n\n${user}`,
-    config: {
-    responseMimeType: 'application/json',
-    temperature: 0,
-  },
+    model: MODEL,
+    contents: `${system}\n\n${user}\n\nReturn ONLY valid JSON, no markdown code blocks.`,
   });
 
   const text = response.text;
   if (!text) {
-    console.error('Empty response from model:', modelName);
+    console.error('Empty response from model:', MODEL);
     throw new Error('Empty response from AI model');
   }
 
+  const cleanedText = stripMarkdown(text);
+
   try {
-    return JSON.parse(text);
+    return JSON.parse(cleanedText);
   } catch (parseError) {
-    console.error('Failed to parse JSON response:', text);
-    throw new Error(`Invalid JSON response: ${text.substring(0, 100)}`);
+    console.error('Failed to parse JSON response:', cleanedText);
+    throw new Error(`Invalid JSON response: ${cleanedText.substring(0, 100)}`);
   }
 }
 
-// Helper: try a model with image support
-async function tryModelWithImage(modelName: string, system: string, imageDataUri: string, prompt: string): Promise<Record<string, unknown>> {
+// Helper: try model with image support
+async function tryModelWithImage(system: string, imageDataUri: string, prompt: string): Promise<Record<string, unknown>> {
   // Extract base64 data and mime type from data URI
   const [metadata, base64Data] = imageDataUri.split(';base64,');
   const mimeType = metadata.replace('data:', '');
 
   const response = await ai.models.generateContent({
-    model: modelName,
+    model: MODEL,
     contents: [
       {
         role: 'user',
         parts: [
-          { text: `${system}\n\n${prompt}` },
+          { text: `${system}\n\n${prompt}\n\nReturn ONLY valid JSON, no markdown code blocks.` },
           {
             inlineData: {
-                mimeType,
-                data: base64Data,
+              mimeType,
+              data: base64Data,
             },
           },
         ],
       },
     ],
-    config: {
-      responseMimeType: 'application/json',
-      temperature: 0,
-    },
   });
 
   const text = response.text;
   if (!text) {
-    console.error('Empty response from model with image:', modelName);
+    console.error('Empty response from model with image:', MODEL);
     throw new Error('Empty response from AI model');
   }
 
+  const cleanedText = stripMarkdown(text);
+
   try {
-    return JSON.parse(text);
+    return JSON.parse(cleanedText);
   } catch (parseError) {
-    console.error('Failed to parse JSON response from image:', text);
-    throw new Error(`Invalid JSON response: ${text.substring(0, 100)}`);
+    console.error('Failed to parse JSON response from image:', cleanedText);
+    throw new Error(`Invalid JSON response: ${cleanedText.substring(0, 100)}`);
   }
-}
-
-// Helper: call Gemini with fallback models
-async function ask(system: string, user: string): Promise<Record<string, unknown>> {
-  let lastError: Error | null = null;
-
-  for (const modelName of MODELS) {
-    try {
-      return await tryModel(modelName, system, user);
-    } catch (error) {
-      lastError = error as Error;
-      const errorMessage = (error as Error).message || String(error);
-      const isRateLimit = errorMessage.includes('429') || errorMessage.includes('quota');
-      if (isRateLimit) {
-        console.warn(`Model ${modelName} rate limited, trying next...`);
-        continue;
-      }
-      console.error(`Model ${modelName} failed:`, error);
-      throw error;
-    }
-  }
-
-  throw lastError || new Error('All models failed');
-}
-
-// Helper: call Gemini with image and fallback models
-async function askWithImage(system: string, imageDataUri: string, prompt: string): Promise<Record<string, unknown>> {
-  let lastError: Error | null = null;
-
-  for (const modelName of MODELS) {
-    try {
-      return await tryModelWithImage(modelName, system, imageDataUri, prompt);
-    } catch (error) {
-      lastError = error as Error;
-      const errorMessage = (error as Error).message || String(error);
-      const isRateLimit = errorMessage.includes('429') || errorMessage.includes('quota');
-      if (isRateLimit) {
-        console.warn(`Model ${modelName} rate limited, trying next...`);
-        continue;
-      }
-      console.error(`Model ${modelName} failed:`, error);
-      throw error;
-    }
-  }
-
-  throw lastError || new Error('All models failed');
 }
 
 // Helper: build message content from data URI
@@ -170,9 +126,9 @@ Today is ${today}. Parse relative dates like "next Friday" into exact dates.`;
   let data: Record<string, unknown>;
 
   if (isImage) {
-    data = await askWithImage(system, input.documentDataUri, text);
+    data = await tryModelWithImage(system, input.documentDataUri, text);
   } else {
-    data = await ask(system, text);
+    data = await tryModel(system, text);
   }
 
   return {
@@ -199,6 +155,6 @@ export async function trackApplicationDeadlines(input: { documentText: string })
   const system = `Extract the deadline from text. Return JSON: { "deadline": "YYYY-MM-DD" }
 Today is ${today}. Return empty deadline if none found.`;
 
-  const data = await ask(system, input.documentText);
+  const data = await tryModel(system, input.documentText);
   return { deadline: (data.deadline as string) || undefined };
 }
