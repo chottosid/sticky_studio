@@ -33,26 +33,30 @@ export function EditOpportunityDialog({
   onSuccess,
 }: EditOpportunityDialogProps) {
   const [isSaving, setIsSaving] = React.useState(false);
+  const [name, setName] = React.useState(opportunity.name);
+  const [details, setDetails] = React.useState(opportunity.details);
+  const [deadline, setDeadline] = React.useState(opportunity.deadline || '');
   const [selectedCategory, setSelectedCategory] = React.useState<OpportunityCategory>(opportunity.category || 'job');
-  const formRef = React.useRef<HTMLFormElement>(null);
   const { toast } = useToast();
 
+  // Sync state when opportunity prop changes (e.g., when dialog opens with different opportunity)
+  React.useEffect(() => {
+    if (open) {
+      setName(opportunity.name);
+      setDetails(opportunity.details);
+      setDeadline(opportunity.deadline || '');
+      setSelectedCategory(opportunity.category || 'job');
+    }
+  }, [open, opportunity]);
+
   const handleSave = async () => {
-    if (!formRef.current) return;
-
     setIsSaving(true);
-    const formData = new FormData(formRef.current);
-
-    // Get form values and handle null/empty cases properly
-    const name = formData.get('name');
-    const details = formData.get('details');
-    const deadline = formData.get('deadline');
 
     const opportunityData = {
       id: opportunity.id,
-      name: typeof name === 'string' ? name : '',
-      details: typeof details === 'string' ? details : '',
-      deadline: typeof deadline === 'string' && deadline.trim() !== '' ? deadline : undefined,
+      name: name,
+      details: details,
+      deadline: deadline && deadline.trim() !== '' ? deadline : undefined,
       category: selectedCategory,
     };
 
@@ -94,56 +98,54 @@ export function EditOpportunityDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form ref={formRef} onSubmit={(e) => e.preventDefault()}>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-name">Opportunity Name</Label>
-              <Input
-                id="edit-name"
-                name="name"
-                defaultValue={opportunity.name}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-details">Details</Label>
-              <Textarea
-                id="edit-details"
-                name="details"
-                defaultValue={opportunity.details}
-                required
-                rows={6}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-deadline">Deadline (YYYY-MM-DD)</Label>
-              <Input
-                id="edit-deadline"
-                name="deadline"
-                type="date"
-                defaultValue={opportunity.deadline || ''}
-                placeholder="No deadline"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-category">Category</Label>
-              <Select
-                value={selectedCategory}
-                onValueChange={(value) => setSelectedCategory(value as OpportunityCategory)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="job">Job</SelectItem>
-                  <SelectItem value="internship">Internship</SelectItem>
-                  <SelectItem value="contest">Contest</SelectItem>
-                  <SelectItem value="higher-study">Higher Study</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="edit-name">Opportunity Name</Label>
+            <Input
+              id="edit-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
           </div>
-        </form>
+          <div className="space-y-2">
+            <Label htmlFor="edit-details">Details</Label>
+            <Textarea
+              id="edit-details"
+              value={details}
+              onChange={(e) => setDetails(e.target.value)}
+              required
+              rows={6}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-deadline">Deadline (YYYY-MM-DD)</Label>
+            <Input
+              id="edit-deadline"
+              type="date"
+              value={deadline}
+              onChange={(e) => setDeadline(e.target.value)}
+              placeholder="No deadline"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-category">Category</Label>
+            <Select
+              value={selectedCategory}
+              onValueChange={(value) => setSelectedCategory(value as OpportunityCategory)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select a category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="job">Job</SelectItem>
+                <SelectItem value="internship">Internship</SelectItem>
+                <SelectItem value="contest">Contest</SelectItem>
+                <SelectItem value="higher-study">Higher Study</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
