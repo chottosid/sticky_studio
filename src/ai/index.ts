@@ -24,7 +24,18 @@ async function tryModel(modelName: string, system: string, user: string): Promis
   },
   });
 
-  return JSON.parse(response.text || '{}');
+  const text = response.text;
+  if (!text) {
+    console.error('Empty response from model:', modelName);
+    throw new Error('Empty response from AI model');
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (parseError) {
+    console.error('Failed to parse JSON response:', text);
+    throw new Error(`Invalid JSON response: ${text.substring(0, 100)}`);
+  }
 }
 
 // Helper: try a model with image support
@@ -55,7 +66,18 @@ async function tryModelWithImage(modelName: string, system: string, imageDataUri
     },
   });
 
-  return JSON.parse(response.text || '{}');
+  const text = response.text;
+  if (!text) {
+    console.error('Empty response from model with image:', modelName);
+    throw new Error('Empty response from AI model');
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (parseError) {
+    console.error('Failed to parse JSON response from image:', text);
+    throw new Error(`Invalid JSON response: ${text.substring(0, 100)}`);
+  }
 }
 
 // Helper: call Gemini with fallback models
