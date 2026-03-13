@@ -1,6 +1,7 @@
 'use server';
 
 import OpenAI from 'openai';
+import { OpportunityCategory } from '@/lib/types';
 
 // OpenRouter client
 const client = new OpenAI({
@@ -39,9 +40,6 @@ function buildContent(dataUri: string, prompt: string) {
   }
   return prompt;
 }
-
-// Valid categories
-type OpportunityCategory = 'job' | 'internship' | 'contest' | 'higher-study';
 
 // Types
 export type ExtractedOpportunity = {
