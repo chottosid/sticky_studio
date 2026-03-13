@@ -163,10 +163,41 @@ export function AddOpportunityDialog() {
     const details = formData.get('details');
     const deadline = formData.get('deadline');
 
+    // Validate required fields
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Name Required',
+        description: 'Please enter an opportunity name.',
+      });
+      setIsSaving(false);
+      return;
+    }
+
+    if (!details || typeof details !== 'string' || !details.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Details Required',
+        description: 'Please enter opportunity details.',
+      });
+      setIsSaving(false);
+      return;
+    }
+
+    if (!deadline || typeof deadline !== 'string' || !deadline.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Deadline Required',
+        description: 'Please enter a deadline for this opportunity.',
+      });
+      setIsSaving(false);
+      return;
+    }
+
     const opportunityData = {
-      name: typeof name === 'string' ? name : '',
-      details: typeof details === 'string' ? details : '',
-      deadline: typeof deadline === 'string' && deadline.trim() !== '' ? deadline : '',
+      name: name.trim(),
+      details: details.trim(),
+      deadline: deadline.trim(),
       documentUri: finalDocumentUri,
       documentType: finalDocumentType,
       category: selectedCategory,
