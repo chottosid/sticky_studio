@@ -3,11 +3,12 @@
 import { GoogleGenAI } from '@google/genai';
 import { OpportunityCategory } from '@/lib/types';
 
-// Gemini client
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+// Model configuration
+const OPENROUTER_MODEL = 'google/gemini-2.5-flash';
+const GEMINI_MODEL = 'gemma-3-27b-it';
 
-// Use Gemma 3 27B (higher rate limits)
-const MODEL = 'gemma-3-27b-it';
+// Gemini client (fallback)
+const geminiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 // Helper: strip markdown code blocks from response
 function stripMarkdown(text: string): string {
@@ -38,21 +39,9 @@ function extractObject(data: unknown): Record<string, unknown> {
   return {};
 }
 
-// Helper: try model with JSON response
-async function tryModel(system: string, user: string): Promise<Record<string, unknown>> {
-  const response = await ai.models.generateContent({
-    model: MODEL,
-    contents: `${system}\n\n${user}\n\nReturn ONLY valid JSON object (not array), no markdown code blocks.`,
-  });
-
-  const text = response.text;
-  if (!text) {
-    console.error('Empty response from model:', MODEL);
-    throw new Error('Empty response from AI model');
-  }
-
+// Helper: parse JSON response
+function parseJsonResponse(text: string): Record<string, unknown> {
   const cleanedText = stripMarkdown(text);
-
   try {
     const parsed = JSON.parse(cleanedText);
     return extractObject(parsed);
@@ -62,45 +51,150 @@ async function tryModel(system: string, user: string): Promise<Record<string, un
   }
 }
 
-// Helper: try model with image support
-async function tryModelWithImage(system: string, imageDataUri: string, prompt: string): Promise<Record<string, unknown>> {
-  // Extract base64 data and mime type from data URI
+// OpenRouter API call (text only)
+async function callOpenRouterText(system: string, user: string): Promise<string> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENROUTER_API_KEY is not set');
+  }
+
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+    },
+    body: JSON.stringify({
+      model: OPENROUTER_MODEL,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: `${user}\n\nReturn ONLY valid JSON object (not array), no markdown code blocks.` },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error('Empty response from OpenRouter');
+  }
+  return content;
+}
+
+// OpenRouter API call (with image)
+async function callOpenRouterImage(system: string, imageDataUri: string, prompt: string): Promise<string> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENROUTER_API_KEY is not set');
+  }
+
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+    },
+    body: JSON.stringify({
+      model: OPENROUTER_MODEL,
+      messages: [
+        { role: 'system', content: system },
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: imageDataUri } },
+            { type: 'text', text: `${prompt}\n\nReturn ONLY valid JSON, no markdown code blocks.` },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error('Empty response from OpenRouter');
+  }
+  return content;
+}
+
+// Gemini API call (text only)
+async function callGeminiText(system: string, user: string): Promise<string> {
+  const response = await geminiClient.models.generateContent({
+    model: GEMINI_MODEL,
+    contents: `${system}\n\n${user}\n\nReturn ONLY valid JSON object (not array), no markdown code blocks.`,
+  });
+
+  const text = response.text;
+  if (!text) {
+    throw new Error('Empty response from Gemini');
+  }
+  return text;
+}
+
+// Gemini API call (with image)
+async function callGeminiImage(system: string, imageDataUri: string, prompt: string): Promise<string> {
   const [metadata, base64Data] = imageDataUri.split(';base64,');
   const mimeType = metadata.replace('data:', '');
 
-  const response = await ai.models.generateContent({
-    model: MODEL,
+  const response = await geminiClient.models.generateContent({
+    model: GEMINI_MODEL,
     contents: [
-      {
-        role: 'user',
-        parts: [
-          { text: `${system}\n\n${prompt}\n\nReturn ONLY valid JSON, no markdown code blocks.` },
-          {
-            inlineData: {
-              mimeType,
-              data: base64Data,
-            },
-          },
-        ],
-      },
+      { inlineData: { mimeType, data: base64Data } },
+      { text: `${system}\n\n${prompt}\n\nReturn ONLY valid JSON, no markdown code blocks.` },
     ],
   });
 
   const text = response.text;
   if (!text) {
-    console.error('Empty response from model with image:', MODEL);
-    throw new Error('Empty response from AI model');
+    throw new Error('Empty response from Gemini');
   }
+  return text;
+}
 
-  const cleanedText = stripMarkdown(text);
-
+// Helper: try model with JSON response (OpenRouter first, Gemini fallback)
+async function tryModel(system: string, user: string): Promise<Record<string, unknown>> {
+  // Try OpenRouter first
   try {
-    const parsed = JSON.parse(cleanedText);
-    return extractObject(parsed);
-  } catch (parseError) {
-    console.error('Failed to parse JSON response from image:', cleanedText);
-    throw new Error(`Invalid JSON response: ${cleanedText.substring(0, 100)}`);
+    console.log('Trying OpenRouter:', OPENROUTER_MODEL);
+    const text = await callOpenRouterText(system, user);
+    return parseJsonResponse(text);
+  } catch (error) {
+    console.error('OpenRouter failed, falling back to Gemini:', error instanceof Error ? error.message : error);
   }
+
+  // Fallback to Gemini
+  console.log('Falling back to Gemini:', GEMINI_MODEL);
+  const text = await callGeminiText(system, user);
+  return parseJsonResponse(text);
+}
+
+// Helper: try model with image support (OpenRouter first, Gemini fallback)
+async function tryModelWithImage(system: string, imageDataUri: string, prompt: string): Promise<Record<string, unknown>> {
+  // Try OpenRouter first
+  try {
+    console.log('Trying OpenRouter with image:', OPENROUTER_MODEL);
+    const text = await callOpenRouterImage(system, imageDataUri, prompt);
+    return parseJsonResponse(text);
+  } catch (error) {
+    console.error('OpenRouter failed, falling back to Gemini:', error instanceof Error ? error.message : error);
+  }
+
+  // Fallback to Gemini
+  console.log('Falling back to Gemini with image:', GEMINI_MODEL);
+  const text = await callGeminiImage(system, imageDataUri, prompt);
+  return parseJsonResponse(text);
 }
 
 // Helper: build message content from data URI

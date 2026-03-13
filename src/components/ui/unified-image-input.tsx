@@ -123,10 +123,15 @@ export function UnifiedImageInput({
     const input = fileInputRef.current;
     if (!input) return;
 
-    const picker = (input as HTMLInputElement & { showPicker?: () => void }).showPicker;
-    if (typeof picker === 'function') {
-      picker.call(input);
-      return;
+    try {
+      // showPicker() requires user activation, may fail in some React contexts
+      const picker = (input as HTMLInputElement & { showPicker?: () => void }).showPicker;
+      if (typeof picker === 'function') {
+        picker.call(input);
+        return;
+      }
+    } catch {
+      // Fall through to click() if showPicker fails
     }
 
     input.click();
