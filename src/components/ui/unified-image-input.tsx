@@ -7,58 +7,90 @@ import { Upload, Image as ImageIcon, Loader2, X, ClipboardPaste } from 'lucide-r
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
+interface FileData {
+  name: string;
+  dataUri: string;
+  type: 'image' | 'pdf' | 'unknown';
+}
+
 interface UnifiedImageInputProps {
-  onFileSelect: (fileData: {
-    name: string;
-    dataUri: string;
-    type: 'image' | 'pdf' | 'unknown';
-  }) => void;
+  onFilesSelect: (files: FileData[]) => void;
   onClear?: () => void;
-  selectedFile?: {
-    name: string;
-    dataUri: string;
-    type: 'image' | 'pdf' | 'unknown';
-  } | null;
+  selectedFiles?: FileData[];
   className?: string;
   disabled?: boolean;
+  multiple?: boolean;
 }
 
 export function UnifiedImageInput({
-  onFileSelect,
+  onFilesSelect,
   onClear,
-  selectedFile,
+  selectedFiles = [],
   className,
   disabled = false,
+  multiple = true,
 }: UnifiedImageInputProps) {
   const [isDragOver, setIsDragOver] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  const processFile = React.useCallback((file: File) => {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUri = event.target?.result as string;
-      let fileType: 'image' | 'pdf' | 'unknown' = 'unknown';
+  const processFile = React.useCallback((file: File): FileData => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUri = event.target?.result as string;
+        let fileType: 'image' | 'pdf' | 'unknown' = 'unknown';
 
-      if (file.type.startsWith('image/')) {
-        fileType = 'image';
-      } else if (file.type === 'application/pdf') {
-        fileType = 'pdf';
-      }
+        if (file.type.startsWith('image/')) {
+          fileType = 'image';
+        } else if (file.type === 'application/pdf') {
+          fileType = 'pdf';
+        }
 
-      onFileSelect({
-        name: file.name,
-        dataUri,
-        type: fileType,
+        resolve({
+          name: file.name,
+          dataUri,
+          type: fileType,
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const processFiles = React.useCallback(async (files: File[]) => {
+    const validFiles = files.filter(
+      file => file.type.startsWith('image/') || file.type === 'application/pdf'
+    );
+
+    if (validFiles.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Invalid File Type',
+        description: 'Please upload image or PDF files only.',
       });
-    };
-    reader.readAsDataURL(file);
-  }, [onFileSelect]);
+      return;
+    }
+
+    if (!multiple && validFiles.length > 1) {
+      toast({
+        title: 'Single File Only',
+        description: 'Only one file can be uploaded at a time.',
+      });
+    }
+
+    const filesToProcess = multiple ? validFiles : [validFiles[0]];
+    const processedFiles = await Promise.all(filesToProcess.map(processFile));
+    onFilesSelect(processedFiles);
+  }, [multiple, onFilesSelect, processFile, toast]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      processFile(file);
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      processFiles(files);
+    }
+    // Reset input so same file can be selected again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
@@ -81,23 +113,10 @@ export function UnifiedImageInput({
     if (disabled) return;
 
     const files = Array.from(e.dataTransfer.files);
-    const file = files[0];
-
-    if (file) {
-      // Check if it's an allowed file type
-      if (file.type.startsWith('image/') || file.type === 'application/pdf') {
-        processFile(file);
-      } else {
-        toast({
-          variant: 'destructive',
-          title: 'Invalid File Type',
-          description: 'Please upload an image or PDF file.',
-        });
-      }
+    if (files.length > 0) {
+      processFiles(files);
     }
   };
-
-
 
   const handleUploadClick = () => {
     if (disabled) return;
@@ -113,35 +132,42 @@ export function UnifiedImageInput({
     input.click();
   };
 
+  const handleRemoveFile = (index: number) => {
+    const newFiles = selectedFiles.filter((_, i) => i !== index);
+    onFilesSelect(newFiles);
+  };
+
   const handleClear = () => {
     if (onClear) {
       onClear();
     }
-    // Reset file input
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
-  // Handle paste event on the container
+  // Handle paste event
   const handleContainerPaste = React.useCallback((e: React.ClipboardEvent) => {
     if (disabled) return;
 
     const items = Array.from(e.clipboardData.items);
-    const imageItem = items.find(item => item.type.startsWith('image/'));
+    const imageItems = items.filter(item => item.type.startsWith('image/'));
 
-    if (imageItem) {
+    if (imageItems.length > 0) {
       e.preventDefault();
-      const file = imageItem.getAsFile();
-      if (file) {
-        processFile(file);
+      const files = imageItems
+        .map(item => item.getAsFile())
+        .filter((file): file is File => file !== null);
+
+      if (files.length > 0) {
+        processFiles(files);
         toast({
-          title: 'Image Pasted!',
-          description: 'Image has been pasted from clipboard.',
+          title: 'Image(s) Pasted!',
+          description: `${files.length} image(s) pasted from clipboard.`,
         });
       }
     }
-  }, [disabled, processFile, toast]);
+  }, [disabled, processFiles, toast]);
 
   const handleManualPaste = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -149,24 +175,30 @@ export function UnifiedImageInput({
 
     try {
       const items = await navigator.clipboard.read();
+      const files: File[] = [];
+
       for (const item of items) {
         const imageType = item.types.find(type => type.startsWith('image/'));
         if (imageType) {
           const blob = await item.getType(imageType);
           const file = new File([blob], `pasted-image-${Date.now()}.png`, { type: imageType });
-          processFile(file);
-          toast({
-            title: 'Image Pasted!',
-            description: 'Image has been pasted from clipboard.',
-          });
-          return;
+          files.push(file);
         }
       }
-      toast({
-        variant: 'destructive',
-        title: 'No Image Found',
-        description: 'No image was found in your clipboard.',
-      });
+
+      if (files.length > 0) {
+        processFiles(files);
+        toast({
+          title: 'Image(s) Pasted!',
+          description: `${files.length} image(s) pasted from clipboard.`,
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'No Images Found',
+          description: 'No images were found in your clipboard.',
+        });
+      }
     } catch (err) {
       console.error('Failed to read clipboard:', err);
       toast({
@@ -179,7 +211,9 @@ export function UnifiedImageInput({
 
   return (
     <div className={cn('w-full', className)}>
-      <Label htmlFor="unified-file-input">Document (PDF or Image)</Label>
+      <Label htmlFor="unified-file-input">
+        Document{multiple ? 's' : ''} (PDF or Image{multiple ? 's' : ''})
+      </Label>
 
       {/* Hidden file input */}
       <input
@@ -189,6 +223,7 @@ export function UnifiedImageInput({
         className="sr-only"
         onChange={handleFileChange}
         accept="application/pdf,image/*"
+        multiple={multiple}
         disabled={disabled}
       />
 
@@ -200,7 +235,7 @@ export function UnifiedImageInput({
             ? "border-primary bg-primary/10 scale-105"
             : "border-primary/20 bg-gradient-to-br from-primary/5 to-accent/5 hover:border-primary/40",
           disabled && "opacity-50 cursor-not-allowed",
-          selectedFile && "border-green-300 bg-green-50"
+          selectedFiles.length > 0 && "border-green-300 bg-green-50"
         )}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -209,47 +244,69 @@ export function UnifiedImageInput({
         tabIndex={0}
         onClick={handleUploadClick}
       >
-        {selectedFile ? (
+        {selectedFiles.length > 0 ? (
           <div className="flex flex-col items-center gap-3 w-full">
             <div className="flex items-center gap-2 text-green-700">
               <ImageIcon className="h-8 w-8" />
               <div className="flex-1">
-                <p className="font-medium">File selected:</p>
-                <p className="text-sm text-green-600">{selectedFile.name}</p>
+                <p className="font-medium">{selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected</p>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  handleClear();
-                }}
-                disabled={disabled}
-                className="h-8 w-8 p-0 hover:bg-red-100"
-              >
-                <X className="h-4 w-4" />
-              </Button>
+              {selectedFiles.length === 1 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleClear();
+                  }}
+                  disabled={disabled}
+                  className="h-8 w-8 p-0 hover:bg-red-100"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
             </div>
 
-            {selectedFile.type === 'image' && (
-              <div className="max-w-full max-h-32 overflow-hidden rounded border">
-                <img
-                  src={selectedFile.dataUri}
-                  alt="Preview"
-                  className="max-w-full max-h-32 object-contain"
-                />
-              </div>
-            )}
+            {/* File thumbnails */}
+            <div className="flex flex-wrap gap-2 justify-center max-w-full">
+              {selectedFiles.map((file, index) => (
+                <div key={index} className="relative group">
+                  {file.type === 'image' ? (
+                    <div className="w-16 h-16 rounded border overflow-hidden">
+                      <img
+                        src={file.dataUri}
+                        alt={file.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-16 h-16 rounded border bg-gray-100 flex items-center justify-center">
+                      <ImageIcon className="h-6 w-6 text-gray-400" />
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleRemoveFile(index);
+                    }}
+                    className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           <>
             <Upload className="h-12 w-12 text-primary/60 mb-4" />
             <div className="text-center mb-4">
               <p className="text-sm font-medium text-foreground mb-1">
-                {isDragOver ? 'Drop your file here' : 'Upload an image/PDF'}
+                {isDragOver ? 'Drop your files here' : `Upload image${multiple ? 's' : ''}/PDF${multiple ? 's' : ''}`}
               </p>
               <p className="text-xs text-muted-foreground">
-                Click to browse or drag & drop files
+                {multiple ? 'Select multiple files or drag & drop' : 'Click to browse or drag & drop'}
               </p>
             </div>
 
@@ -274,16 +331,16 @@ export function UnifiedImageInput({
                 className="flex items-center gap-2 min-h-10 sm:min-h-0 px-4"
               >
                 <ClipboardPaste className="h-4 w-4" />
-                Paste Image
+                Paste Image{multiple ? 's' : ''}
               </Button>
             </div>
           </>
         )}
       </div>
 
-      {!selectedFile && (
+      {selectedFiles.length === 0 && (
         <p className="text-xs text-muted-foreground mt-2 text-center">
-          Supports JPG, PNG, GIF, PDF files. You can also paste images directly with Ctrl+V.
+          Supports JPG, PNG, GIF, PDF files. You can also paste images with Ctrl+V.
         </p>
       )}
     </div>

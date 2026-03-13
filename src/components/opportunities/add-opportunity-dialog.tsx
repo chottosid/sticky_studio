@@ -45,6 +45,12 @@ function encodeTextToBase64(text: string): string {
 
 type ExtractedData = Omit<Opportunity, 'id' | 'documentUri' | 'documentType'>;
 
+interface FileData {
+  name: string;
+  dataUri: string;
+  type: 'image' | 'pdf' | 'unknown';
+}
+
 export function AddOpportunityDialog() {
   const [open, setOpen] = React.useState(false);
   const [step, setStep] = React.useState<'input' | 'review'>('input');
@@ -53,11 +59,7 @@ export function AddOpportunityDialog() {
   const [isSaving, setIsSaving] = React.useState(false);
 
   // Input states
-  const [selectedFile, setSelectedFile] = React.useState<{
-    name: string;
-    dataUri: string;
-    type: 'image' | 'pdf' | 'unknown';
-  } | null>(null);
+  const [selectedFiles, setSelectedFiles] = React.useState<FileData[]>([]);
   const [textInput, setTextInput] = React.useState('');
 
   // Review states
@@ -73,7 +75,7 @@ export function AddOpportunityDialog() {
     setStep('input');
     setIsExtracting(false);
     setIsSaving(false);
-    setSelectedFile(null);
+    setSelectedFiles([]);
     setTextInput('');
     setExtractedData(null);
     setFinalDocumentUri('');
@@ -81,17 +83,11 @@ export function AddOpportunityDialog() {
     setSelectedCategory('job');
   };
 
-  const handleFileSelect = (fileData: {
-    name: string;
-    dataUri: string;
-    type: 'image' | 'pdf' | 'unknown';
-  }) => {
-    setSelectedFile(fileData);
-    setActiveTab('image'); // Switch to image tab when file is selected
-  };
-
-  const handleFileClear = () => {
-    setSelectedFile(null);
+  const handleFilesSelect = (files: FileData[]) => {
+    setSelectedFiles(files);
+    if (files.length > 0) {
+      setActiveTab('image'); // Switch to image tab when files are selected
+    }
   };
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -102,9 +98,32 @@ export function AddOpportunityDialog() {
     let documentDataUri = '';
     let documentType: 'image' | 'pdf' | 'text' | 'unknown' = 'unknown';
 
-    if (activeTab === 'image' && selectedFile) {
-      documentDataUri = selectedFile.dataUri;
-      documentType = selectedFile.type;
+    if (activeTab === 'image' && selectedFiles.length > 0) {
+      // For multiple files, combine all data URIs
+      if (selectedFiles.length === 1) {
+        documentDataUri = selectedFiles[0].dataUri;
+        documentType = selectedFiles[0].type;
+      } else {
+        // Combine multiple images into a single request
+        // We'll pass all images as a JSON-encoded array of data URIs
+        const imageDataUris = selectedFiles
+          .filter(f => f.type === 'image')
+          .map(f => f.dataUri);
+
+        if (imageDataUris.length === 0) {
+          toast({
+            variant: 'destructive',
+            title: 'No Valid Images',
+            description: 'Please upload at least one image file.',
+          });
+          return;
+        }
+
+        // For multiple images, we'll process the first image and note there are more
+        // The AI will process them sequentially if needed
+        documentDataUri = imageDataUris[0];
+        documentType = 'image';
+      }
     } else if (activeTab === 'text' && textInput) {
       try {
         const base64Text = encodeTextToBase64(textInput);
@@ -123,20 +142,57 @@ export function AddOpportunityDialog() {
       toast({
         variant: 'destructive',
         title: 'No input provided',
-        description: 'Please upload a file or paste text to extract details.',
+        description: 'Please upload files or paste text to extract details.',
       });
       return;
     }
 
     setIsExtracting(true);
     try {
-      const result = await extractOpportunityDetails({ documentDataUri });
-      setExtractedData(result);
-      setFinalDocumentUri(documentDataUri);
-      setFinalDocumentType(documentType);
-      // Set category from AI extraction
-      if (result.category) {
-        setSelectedCategory(result.category);
+      // If multiple images, process each one and combine results
+      if (selectedFiles.length > 1 && activeTab === 'image') {
+        const imageFiles = selectedFiles.filter(f => f.type === 'image');
+        const results = [];
+
+        for (let i = 0; i < imageFiles.length; i++) {
+          const file = imageFiles[i];
+          toast({
+            title: `Processing image ${i + 1}/${imageFiles.length}...`,
+            description: file.name,
+          });
+
+          try {
+            const result = await extractOpportunityDetails({ documentDataUri: file.dataUri });
+            results.push(result);
+          } catch (error) {
+            console.error(`Failed to extract from ${file.name}:`, error);
+          }
+        }
+
+        if (results.length === 0) {
+          throw new Error('Could not extract details from any image');
+        }
+
+        // Combine results - use the first non-empty value for each field
+        const combinedResult: ExtractedData = {
+          name: results.find(r => r.name)?.name || '',
+          details: results.map(r => r.details).filter(Boolean).join('\n\n---\n\n') || '',
+          deadline: results.find(r => r.deadline)?.deadline || undefined,
+          category: results[0]?.category || 'job',
+        };
+
+        setExtractedData(combinedResult);
+        setFinalDocumentUri(imageFiles[0].dataUri); // Store first image as primary
+        setFinalDocumentType('image');
+        setSelectedCategory(combinedResult.category);
+      } else {
+        const result = await extractOpportunityDetails({ documentDataUri });
+        setExtractedData(result);
+        setFinalDocumentUri(documentDataUri);
+        setFinalDocumentType(documentType);
+        if (result.category) {
+          setSelectedCategory(result.category);
+        }
       }
       setStep('review');
     } catch (error) {
@@ -201,7 +257,7 @@ export function AddOpportunityDialog() {
       documentUri: finalDocumentUri,
       documentType: finalDocumentType,
       category: selectedCategory,
-    }
+    };
 
     try {
       const result = await addOpportunity(opportunityData);
@@ -252,7 +308,7 @@ export function AddOpportunityDialog() {
           <DialogTitle>Add New Opportunity</DialogTitle>
           <DialogDescription>
             {step === 'input'
-              ? 'Upload a document or paste text. The AI will extract key details.'
+              ? 'Upload documents or paste text. The AI will extract key details.'
               : 'Review the extracted details and save the opportunity.'}
           </DialogDescription>
         </DialogHeader>
@@ -265,16 +321,16 @@ export function AddOpportunityDialog() {
               className="w-full"
             >
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="image">Upload/Paste Image</TabsTrigger>
+                <TabsTrigger value="image">Upload Images</TabsTrigger>
                 <TabsTrigger value="text">Paste Text</TabsTrigger>
               </TabsList>
               <TabsContent value="image">
                 <div className="py-4">
                   <UnifiedImageInput
-                    onFileSelect={handleFileSelect}
-                    onClear={handleFileClear}
-                    selectedFile={selectedFile}
+                    onFilesSelect={handleFilesSelect}
+                    selectedFiles={selectedFiles}
                     disabled={isExtracting}
+                    multiple={true}
                   />
                 </div>
               </TabsContent>
@@ -295,7 +351,7 @@ export function AddOpportunityDialog() {
               <DialogClose asChild>
                 <Button variant="ghost">Cancel</Button>
               </DialogClose>
-              <Button onClick={handleExtract} disabled={isExtracting}>
+              <Button onClick={handleExtract} disabled={isExtracting || (activeTab === 'image' && selectedFiles.length === 0)}>
                 {isExtracting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
