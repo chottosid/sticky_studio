@@ -1,67 +1,46 @@
 import 'dotenv/config';
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { query } from '../src/lib/db';
 
-const client = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: 'https://openrouter.ai/api/v1',
-});
-
-const PRIMARY_MODEL = 'google/gemma-3-27b-it:free';
-const FALLBACK_MODEL = 'mistralai/mistral-small-3.1-24b-instruct:free';
+// Gemini client
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+const MODEL = 'gemini-2.0-flash';
 
 type OpportunityCategory = 'job' | 'internship' | 'contest' | 'higher-study';
 
 async function categorizeOpportunity(name: string, details: string): Promise<OpportunityCategory> {
-  const system = `You are a classifier. Categorize the opportunity into exactly one of these categories:
+  const model = genAI.getGenerativeModel({ model: MODEL });
+
+  const prompt = `You are a classifier. Categorize the opportunity into exactly one of these categories:
 - "job": Full-time employment, career positions
-- "internship": Student internships, co-ops,- "contest": Competitions, hackathons, awards
+- "internship": Student internships, co-ops
+- "contest": Competitions, hackathons, awards
 - "higher-study": PhD, masters, scholarships, fellowships, research positions
 
-Return ONLY the category name (job/internship/contest/higher-study), nothing else.`;
+Return ONLY the category name (job/internship/contest/higher-study), nothing else.
 
-  const validCategories: OpportunityCategory[] = ['job', 'internship', 'contest', 'higher-study'];
+Name: ${name}
 
-  // Try primary model first
+Details: ${details}
+
+Category:`;
+
   try {
-    const res = await client.chat.completions.create({
-      model: PRIMARY_MODEL,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: `Name: ${name}\n\nDetails: ${details}\n\nCategory:` },
-      ],
-      temperature: 0,
-      max_tokens: 20,
+    const result = await model.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0, maxOutputTokens: 20 },
     });
 
-    const category = res.choices[0]?.message?.content?.trim().toLowerCase() as OpportunityCategory;
+    const category = result.response.text().trim().toLowerCase() as OpportunityCategory;
+    const validCategories: OpportunityCategory[] = ['job', 'internship', 'contest', 'higher-study'];
+
     if (validCategories.includes(category)) {
       return category;
     }
     return 'job';
   } catch (error) {
-    // Try fallback model
-    console.error(`Primary model (${PRIMARY_MODEL}) failed, trying fallback:`, error);
-    try {
-      const res = await client.chat.completions.create({
-        model: FALLBACK_MODEL,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: `Name: ${name}\n\nDetails: ${details}\n\nCategory:` },
-        ],
-        temperature: 0,
-        max_tokens: 20,
-      });
-
-      const category = res.choices[0]?.message?.content?.trim().toLowerCase() as OpportunityCategory;
-      if (validCategories.includes(category)) {
-        return category;
-      }
-      return 'job';
-    } catch (fallbackError) {
-      console.error('Fallback model also failed:', fallbackError);
-      return 'job';
-    }
+    console.error('Gemini error:', error);
+    return 'job';
   }
 }
 
@@ -82,7 +61,7 @@ async function main() {
   }
 
   console.log(`📋 Found ${opportunities.length} opportunities to categorize\n`);
-  console.log('Starting LLM-based categorization...\n');
+  console.log('Starting Gemini-based categorization...\n');
 
   const stats = {
     total: opportunities.length,
@@ -118,7 +97,7 @@ async function main() {
     }
 
     // Rate limiting delay
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 200));
   }
 
   console.log('\n' + '═'.repeat(50));

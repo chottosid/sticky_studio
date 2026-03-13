@@ -1,59 +1,79 @@
 'use server';
 
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { OpportunityCategory } from '@/lib/types';
 
-// OpenRouter client
-const client = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: 'https://openrouter.ai/api/v1',
-});
+// Gemini client
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-const PRIMARY_MODEL = 'google/gemma-3-27b-it:free';
-const FALLBACK_MODEL = 'mistralai/mistral-small-3.1-24b-instruct:free';
+// Use Gemini 2.0 Flash (fast and free tier available)
+const MODEL = 'gemini-2.0-flash';
 
-// Helper: call AI with JSON response, with fallback
+// Helper: call Gemini with JSON response
 async function ask(system: string, user: string): Promise<Record<string, unknown>> {
-  try {
-    const res = await client.chat.completions.create({
-      model: PRIMARY_MODEL,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-      response_format: { type: 'json_object' },
+  const model = genAI.getGenerativeModel({ model: MODEL });
+
+  const result = await model.generateContent({
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: `${system}\n\n${user}` }],
+      },
+    ],
+    generationConfig: {
       temperature: 0,
-    });
-    return JSON.parse(res.choices[0]?.message?.content || '{}');
-  } catch (error) {
-    console.error(`Primary model (${PRIMARY_MODEL}) failed, trying fallback:`, error);
-    const res = await client.chat.completions.create({
-      model: FALLBACK_MODEL,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-      response_format: { type: 'json_object' },
+      responseMimeType: 'application/json',
+    },
+  });
+
+  const response = result.response.text();
+  return JSON.parse(response || '{}');
+}
+
+// Helper: call Gemini with image support
+async function askWithImage(system: string, imageDataUri: string, prompt: string): Promise<Record<string, unknown>> {
+  const model = genAI.getGenerativeModel({ model: MODEL });
+
+  // Extract base64 data and mime type from data URI
+  const [metadata, base64Data] = imageDataUri.split(';base64,');
+  const mimeType = metadata.replace('data:', '');
+
+  const result = await model.generateContent({
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { text: `${system}\n\n${prompt}` },
+          {
+            inlineData: {
+              mimeType,
+              data: base64Data,
+            },
+          },
+        ],
+      },
+    ],
+    generationConfig: {
       temperature: 0,
-    });
-    return JSON.parse(res.choices[0]?.message?.content || '{}');
-  }
+      responseMimeType: 'application/json',
+    },
+  });
+
+  const response = result.response.text();
+  return JSON.parse(response || '{}');
 }
 
 // Helper: build message content from data URI
-function buildContent(dataUri: string, prompt: string) {
+function buildContent(dataUri: string, prompt: string): { isImage: boolean; text: string } {
   if (dataUri.startsWith('data:image/')) {
-    return [
-      { type: 'text', text: prompt },
-      { type: 'image_url', image_url: { url: dataUri } },
-    ];
+    return { isImage: true, text: prompt };
   }
   // For text/PDF, decode and include in prompt
   if (dataUri.includes(';base64,')) {
     const decoded = Buffer.from(dataUri.split(';base64,')[1], 'base64').toString('utf-8');
-    return `${prompt}\n\n${decoded}`;
+    return { isImage: false, text: `${prompt}\n\n${decoded}` };
   }
-  return prompt;
+  return { isImage: false, text: prompt };
 }
 
 // Types
@@ -82,54 +102,21 @@ Category guidelines:
 
 Today is ${today}. Parse relative dates like "next Friday" into exact dates.`;
 
-  const user = buildContent(input.documentDataUri, 'Extract details from this document:');
+  const { isImage, text } = buildContent(input.documentDataUri, 'Extract details from this document:');
 
-  // For images, use vision
-  if (input.documentDataUri.startsWith('data:image/')) {
-    try {
-      const res = await client.chat.completions.create({
-        model: PRIMARY_MODEL,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user as unknown as string },
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0,
-      });
-      const data = JSON.parse(res.choices[0]?.message?.content || '{}');
-      return {
-        name: data.name || '',
-        details: data.details || '',
-        deadline: data.deadline || undefined,
-        category: validateCategory(data.category)
-      };
-    } catch (error) {
-      console.error(`Primary model (${PRIMARY_MODEL}) failed, trying fallback:`, error);
-      const res = await client.chat.completions.create({
-        model: FALLBACK_MODEL,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user as unknown as string },
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0,
-      });
-      const data = JSON.parse(res.choices[0]?.message?.content || '{}');
-      return {
-        name: data.name || '',
-        details: data.details || '',
-        deadline: data.deadline || undefined,
-        category: validateCategory(data.category)
-      };
-    }
+  let data: Record<string, unknown>;
+
+  if (isImage) {
+    data = await askWithImage(system, input.documentDataUri, text);
+  } else {
+    data = await ask(system, text);
   }
 
-  const data = await ask(system, user as string);
   return {
     name: (data.name as string) || '',
     details: (data.details as string) || '',
     deadline: (data.deadline as string) || undefined,
-    category: validateCategory(data.category)
+    category: validateCategory(data.category),
   };
 }
 
