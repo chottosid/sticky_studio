@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ChevronLeft, ChevronRight, ArrowUpDown, Calendar, Clock, Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { usePagination } from '@/hooks/use-pagination';
 
 type OpportunityListProps = {
   opportunities: Opportunity[];
@@ -18,23 +19,22 @@ type SortOption = 'newest' | 'oldest' | 'deadline-asc' | 'deadline-desc' | 'name
 const ITEMS_PER_PAGE = 6;
 
 export default function OpportunityList({ opportunities }: OpportunityListProps) {
-  const [currentPage, setCurrentPage] = useState(1);
   const [sortBy, setSortBy] = useState<SortOption>('newest');
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredAndSortedOpportunities = useMemo(() => {
     let filtered = opportunities;
-    
+
     // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      filtered = opportunities.filter(opportunity => 
+      filtered = opportunities.filter(opportunity =>
         opportunity.name.toLowerCase().includes(query) ||
         opportunity.details.toLowerCase().includes(query) ||
         (opportunity.deadline && opportunity.deadline.toLowerCase().includes(query))
       );
     }
-    
+
     // Apply sorting
     const sorted = [...filtered];
     switch (sortBy) {
@@ -65,24 +65,37 @@ export default function OpportunityList({ opportunities }: OpportunityListProps)
     }
   }, [opportunities, sortBy, searchQuery]);
 
-  const totalPages = Math.ceil(filteredAndSortedOpportunities.length / ITEMS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const {
+    currentPage,
+    totalPages,
+    startIndex,
+    endIndex,
+    goToPage,
+    nextPage,
+    prevPage,
+    canGoNext,
+    canGoPrev,
+    pageNumbers,
+  } = usePagination({
+    totalItems: filteredAndSortedOpportunities.length,
+    itemsPerPage: ITEMS_PER_PAGE,
+  });
+
   const currentOpportunities = filteredAndSortedOpportunities.slice(startIndex, endIndex);
 
   const handlePageChange = (page: number) => {
-    setCurrentPage(page);
+    goToPage(page);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value);
-    setCurrentPage(1); // Reset to first page when searching
+    goToPage(1); // Reset to first page when searching
   };
 
   const clearSearch = () => {
     setSearchQuery('');
-    setCurrentPage(1);
+    goToPage(1);
   };
 
   if (opportunities.length === 0) {
@@ -178,36 +191,40 @@ export default function OpportunityList({ opportunities }: OpportunityListProps)
           <Button
             variant="outline"
             size="sm"
-            onClick={() => handlePageChange(currentPage - 1)}
-            disabled={currentPage === 1}
+            onClick={() => { prevPage(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            disabled={!canGoPrev}
             className="flex items-center gap-1"
           >
             <ChevronLeft className="h-4 w-4" />
             Previous
           </Button>
-          
+
           <div className="flex items-center gap-1">
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-              <Button
-                key={page}
-                variant={currentPage === page ? "default" : "outline"}
-                size="sm"
-                onClick={() => handlePageChange(page)}
-                className={cn(
-                  "w-10 h-10",
-                  currentPage === page && "bg-primary text-primary-foreground"
-                )}
-              >
-                {page}
-              </Button>
+            {pageNumbers.map((pageNum, index) => (
+              pageNum === '...' ? (
+                <span key={`ellipsis-${index}`} className="px-2 text-muted-foreground">...</span>
+              ) : (
+                <Button
+                  key={pageNum}
+                  variant={currentPage === pageNum ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => handlePageChange(pageNum)}
+                  className={cn(
+                    "w-10 h-10",
+                    currentPage === pageNum && "bg-primary text-primary-foreground"
+                  )}
+                >
+                  {pageNum}
+                </Button>
+              )
             ))}
           </div>
-          
+
           <Button
             variant="outline"
             size="sm"
-            onClick={() => handlePageChange(currentPage + 1)}
-            disabled={currentPage === totalPages}
+            onClick={() => { nextPage(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            disabled={!canGoNext}
             className="flex items-center gap-1"
           >
             Next

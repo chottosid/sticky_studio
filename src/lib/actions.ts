@@ -4,8 +4,8 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { saveOpportunity, getOpportunities, deleteOpportunity, updateOpportunity } from '@/lib/data';
-import { Opportunity } from './types';
+import { saveOpportunity, getOpportunities, deleteOpportunity, updateOpportunity, deleteOldOpportunities } from '@/lib/data';
+import { Opportunity, OpportunityCategory } from './types';
 import { sendNewOpportunityEmail, sendTestEmail } from '@/lib/email';
 
 const SESSION_COOKIE_NAME = 'session';
@@ -63,6 +63,7 @@ const AddOpportunitySchema = z.object({
   deadline: z.string().min(1, 'Deadline is required.'), // Changed to required
   documentUri: z.string().min(1, 'Document URI is missing.'),
   documentType: z.enum(['image', 'pdf', 'text', 'unknown']),
+  category: z.enum(['job', 'internship', 'contest', 'higher-study']).default('job'),
 });
 
 type AddOpportunityInput = z.infer<typeof AddOpportunitySchema>;
@@ -79,7 +80,7 @@ export async function addOpportunity(input: AddOpportunityInput) {
     };
   }
 
-  let { name, details, deadline, documentUri, documentType } = parsed.data;
+  let { name, details, deadline, documentUri, documentType, category } = parsed.data;
 
   // Handle month-only input (YYYY-MM) -> force to 1st of month
   if (deadline && /^\d{4}-\d{2}$/.test(deadline)) {
@@ -93,6 +94,7 @@ export async function addOpportunity(input: AddOpportunityInput) {
       deadline,
       documentUri: documentUri,
       documentType: documentType,
+      category: category,
     });
 
     // Send email notification
@@ -112,10 +114,11 @@ export async function getOpportunitiesAction(
   sortBy: string = 'created_at',
   sortOrder: 'ASC' | 'DESC' = 'DESC',
   searchQuery?: string,
-  status?: 'upcoming' | 'past'
+  status?: 'upcoming' | 'past',
+  category?: OpportunityCategory
 ) {
   try {
-    const result = await getOpportunities(page, limit, sortBy, sortOrder, searchQuery, status);
+    const result = await getOpportunities(page, limit, sortBy, sortOrder, searchQuery, status, category);
     return { success: true, ...result };
   } catch (error) {
     console.error('Error fetching opportunities:', error);
@@ -145,6 +148,7 @@ const UpdateOpportunitySchema = z.object({
   deadline: z.string().optional().nullable().transform(val => val || undefined),
   documentUri: z.string().optional(),
   documentType: z.enum(['image', 'pdf', 'text', 'unknown']).optional(),
+  category: z.enum(['job', 'internship', 'contest', 'higher-study']).optional(),
 });
 
 type UpdateOpportunityInput = z.infer<typeof UpdateOpportunitySchema>;
@@ -197,5 +201,20 @@ export async function sendTestEmailAction() {
   } catch (error) {
     console.error('Test email action failed:', error);
     return { success: false, message: 'An error occurred while sending the test email.' };
+  }
+}
+
+export async function cleanupOldOpportunities() {
+  if (!(await isAuthenticated())) {
+    return { success: false, message: 'Unauthorized' };
+  }
+
+  try {
+    const result = await deleteOldOpportunities();
+    revalidatePath('/');
+    return { success: true, message: `Deleted ${result.deleted} old opportunities`, deleted: result.deleted };
+  } catch (error) {
+    console.error('Cleanup failed:', error);
+    return { success: false, message: 'Failed to cleanup old opportunities' };
   }
 }

@@ -1,5 +1,6 @@
-import { Opportunity } from '@/lib/types';
+import { Opportunity, OpportunityCategory } from '@/lib/types';
 import { query } from './db';
+import { formatDeadline } from './utils';
 
 export async function getOpportunities(
   page: number = 1,
@@ -7,7 +8,8 @@ export async function getOpportunities(
   sortBy: string = 'created_at',
   sortOrder: 'ASC' | 'DESC' = 'DESC',
   searchQuery?: string,
-  status?: 'upcoming' | 'past'
+  status?: 'upcoming' | 'past',
+  category?: OpportunityCategory
 ): Promise<{ opportunities: Opportunity[], total: number, hasMore: boolean }> {
   try {
     const offset = (page - 1) * limit;
@@ -20,8 +22,8 @@ export async function getOpportunities(
     if (searchQuery && searchQuery.trim()) {
       const searchTerm = searchQuery.trim();
       conditions.push(`(
-        name ILIKE $${paramCount + 1} OR 
-        details ILIKE $${paramCount + 2} OR 
+        name ILIKE $${paramCount + 1} OR
+        details ILIKE $${paramCount + 2} OR
         COALESCE(deadline::text, '') ILIKE $${paramCount + 3}
       )`);
       queryParams.push(`%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`);
@@ -32,6 +34,12 @@ export async function getOpportunities(
       conditions.push('(deadline IS NULL OR deadline >= CURRENT_DATE)');
     } else if (status === 'past') {
       conditions.push('(deadline IS NOT NULL AND deadline < CURRENT_DATE)');
+    }
+
+    if (category) {
+      conditions.push(`category = $${paramCount + 1}`);
+      queryParams.push(category);
+      paramCount += 1;
     }
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -58,8 +66,8 @@ export async function getOpportunities(
 
     // Get paginated results
     const result = await query(`
-      SELECT id, name, details, deadline, document_uri as "documentUri", document_type as "documentType", created_at
-      FROM opportunities 
+      SELECT id, name, details, deadline, document_uri as "documentUri", document_type as "documentType", category, created_at
+      FROM opportunities
       ${whereClause}
       ${orderByClause}
       LIMIT $${++paramCount} OFFSET $${++paramCount}
@@ -69,9 +77,10 @@ export async function getOpportunities(
       id: row.id.toString(),
       name: row.name,
       details: row.details,
-      deadline: row.deadline ? (typeof row.deadline === 'string' ? row.deadline : new Date(row.deadline).toISOString().split('T')[0]) : null,
+      deadline: formatDeadline(row.deadline),
       documentUri: row.documentUri,
       documentType: row.documentType,
+      category: row.category || 'job',
       created_at: row.created_at,
     }));
 
@@ -86,35 +95,11 @@ export async function getOpportunities(
   }
 }
 
-// Keep the old function for backward compatibility but deprecate it
-export async function getAllOpportunities(): Promise<Opportunity[]> {
-  try {
-    const result = await query(`
-      SELECT id, name, details, deadline, document_uri as "documentUri", document_type as "documentType", created_at
-      FROM opportunities 
-      ORDER BY created_at DESC
-    `);
-
-    return result.rows.map(row => ({
-      id: row.id.toString(),
-      name: row.name,
-      details: row.details,
-      deadline: row.deadline ? (typeof row.deadline === 'string' ? row.deadline : new Date(row.deadline).toISOString().split('T')[0]) : null,
-      documentUri: row.documentUri,
-      documentType: row.documentType,
-      created_at: row.created_at,
-    }));
-  } catch (error) {
-    console.error('Error fetching opportunities:', error);
-    return [];
-  }
-}
-
 export async function getOpportunityById(id: string): Promise<Opportunity | undefined> {
   try {
     const result = await query(`
-      SELECT id, name, details, deadline, document_uri as "documentUri", document_type as "documentType", created_at
-      FROM opportunities 
+      SELECT id, name, details, deadline, document_uri as "documentUri", document_type as "documentType", category, created_at
+      FROM opportunities
       WHERE id = $1
     `, [id]);
 
@@ -127,9 +112,10 @@ export async function getOpportunityById(id: string): Promise<Opportunity | unde
       id: row.id.toString(),
       name: row.name,
       details: row.details,
-      deadline: row.deadline ? (typeof row.deadline === 'string' ? row.deadline : new Date(row.deadline).toISOString().split('T')[0]) : null,
+      deadline: formatDeadline(row.deadline),
       documentUri: row.documentUri,
       documentType: row.documentType,
+      category: row.category || 'job',
       created_at: row.created_at,
     };
   } catch (error) {
@@ -146,15 +132,16 @@ export async function saveOpportunity(opportunity: Omit<Opportunity, 'id'>): Pro
       : null;
 
     const result = await query(`
-      INSERT INTO opportunities (name, details, deadline, document_uri, document_type)
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING id, name, details, deadline, document_uri as "documentUri", document_type as "documentType"
+      INSERT INTO opportunities (name, details, deadline, document_uri, document_type, category)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING id, name, details, deadline, document_uri as "documentUri", document_type as "documentType", category
     `, [
       opportunity.name,
       opportunity.details,
       deadline,
       opportunity.documentUri,
       opportunity.documentType,
+      opportunity.category || 'job',
     ]);
 
     const row = result.rows[0];
@@ -162,9 +149,10 @@ export async function saveOpportunity(opportunity: Omit<Opportunity, 'id'>): Pro
       id: row.id.toString(),
       name: row.name,
       details: row.details,
-      deadline: row.deadline ? (typeof row.deadline === 'string' ? row.deadline : new Date(row.deadline).toISOString().split('T')[0]) : null,
+      deadline: formatDeadline(row.deadline),
       documentUri: row.documentUri,
       documentType: row.documentType,
+      category: row.category || 'job',
     };
   } catch (error) {
     console.error('Error saving opportunity:', error);
@@ -219,6 +207,11 @@ export async function updateOpportunity(id: string, opportunity: Partial<Omit<Op
       values.push(opportunity.documentType);
     }
 
+    if (opportunity.category !== undefined) {
+      updateFields.push(`category = $${++paramCount}`);
+      values.push(opportunity.category);
+    }
+
     if (updateFields.length === 0) {
       throw new Error('No fields to update');
     }
@@ -230,10 +223,10 @@ export async function updateOpportunity(id: string, opportunity: Partial<Omit<Op
     values.push(id);
 
     const result = await query(`
-      UPDATE opportunities 
+      UPDATE opportunities
       SET ${updateFields.join(', ')}
       WHERE id = $${++paramCount}
-      RETURNING id, name, details, deadline, document_uri as "documentUri", document_type as "documentType", created_at
+      RETURNING id, name, details, deadline, document_uri as "documentUri", document_type as "documentType", category, created_at
     `, values);
 
     if (result.rows.length === 0) {
@@ -246,9 +239,10 @@ export async function updateOpportunity(id: string, opportunity: Partial<Omit<Op
       id: row.id.toString(),
       name: row.name,
       details: row.details,
-      deadline: row.deadline ? (typeof row.deadline === 'string' ? row.deadline : new Date(row.deadline).toISOString().split('T')[0]) : null,
+      deadline: formatDeadline(row.deadline),
       documentUri: row.documentUri,
       documentType: row.documentType,
+      category: row.category || 'job',
       created_at: row.created_at,
     };
   } catch (error) {
@@ -260,8 +254,8 @@ export async function updateOpportunity(id: string, opportunity: Partial<Omit<Op
 export async function getOpportunitiesDueOn(dateString: string): Promise<Opportunity[]> {
   try {
     const result = await query(`
-      SELECT id, name, details, deadline, document_uri as "documentUri", document_type as "documentType", created_at
-      FROM opportunities 
+      SELECT id, name, details, deadline, document_uri as "documentUri", document_type as "documentType", category, created_at
+      FROM opportunities
       WHERE deadline = $1
     `, [dateString]);
 
@@ -269,13 +263,34 @@ export async function getOpportunitiesDueOn(dateString: string): Promise<Opportu
       id: row.id.toString(),
       name: row.name,
       details: row.details,
-      deadline: row.deadline ? (typeof row.deadline === 'string' ? row.deadline : new Date(row.deadline).toISOString().split('T')[0]) : null,
+      deadline: formatDeadline(row.deadline),
       documentUri: row.documentUri,
       documentType: row.documentType,
+      category: row.category || 'job',
       created_at: row.created_at,
     }));
   } catch (error) {
     console.error('Error fetching due opportunities:', error);
     return [];
+  }
+}
+
+export async function deleteOldOpportunities(): Promise<{ deleted: number }> {
+  try {
+    // Delete opportunities that are 30 days past their deadline,
+    // or 30 days past creation if no deadline is set
+    const result = await query(`
+      DELETE FROM opportunities
+      WHERE (deadline IS NOT NULL AND deadline < CURRENT_DATE - INTERVAL '30 days')
+         OR (deadline IS NULL AND created_at < CURRENT_DATE - INTERVAL '30 days')
+      RETURNING id
+    `);
+
+    const deleted = result.rows.length;
+    console.log(`Deleted ${deleted} old opportunities`);
+    return { deleted };
+  } catch (error) {
+    console.error('Error deleting old opportunities:', error);
+    throw error;
   }
 }

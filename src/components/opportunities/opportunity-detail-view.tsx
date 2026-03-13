@@ -1,11 +1,11 @@
 'use client';
 
 import Image from 'next/image';
-import { Opportunity } from '@/lib/types';
+import { Opportunity, OpportunityCategory } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { CalendarDays, ExternalLink, ArrowLeft, Edit, Trash2 } from 'lucide-react';
+import { CalendarDays, ExternalLink, ArrowLeft, Edit, Trash2, Briefcase, GraduationCap, Trophy, BookOpen } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { format, parseISO } from 'date-fns';
 import { useEffect, useState } from 'react';
@@ -13,6 +13,14 @@ import { cn } from '@/lib/utils';
 import { EditOpportunityDialog } from './edit-opportunity-dialog';
 import { DeleteOpportunityDialog } from './delete-opportunity-dialog';
 import { useToast } from '@/hooks/use-toast';
+import { useDeadlineStatus } from '@/hooks/use-deadline-status';
+
+const categoryConfig: Record<OpportunityCategory, { label: string; icon: React.ElementType; color: string }> = {
+  'job': { label: 'Job', icon: Briefcase, color: 'bg-blue-100 text-blue-700 border-blue-200' },
+  'internship': { label: 'Internship', icon: GraduationCap, color: 'bg-purple-100 text-purple-700 border-purple-200' },
+  'contest': { label: 'Contest', icon: Trophy, color: 'bg-amber-100 text-amber-700 border-amber-200' },
+  'higher-study': { label: 'Higher Study', icon: BookOpen, color: 'bg-teal-100 text-teal-700 border-teal-200' },
+};
 
 type OpportunityDetailViewProps = {
   opportunity: Opportunity;
@@ -24,6 +32,9 @@ export default function OpportunityDetailView({ opportunity }: OpportunityDetail
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
+
+  const category = opportunity.category || 'job';
+  const CategoryIcon = categoryConfig[category].icon;
 
   useEffect(() => {
     if (opportunity.documentType === 'text' && typeof opportunity.documentUri === 'string') {
@@ -44,10 +55,8 @@ export default function OpportunityDetailView({ opportunity }: OpportunityDetail
   const formattedDeadline = opportunity.deadline && typeof opportunity.deadline === 'string'
     ? format(parseISO(opportunity.deadline), 'MMMM do, yyyy')
     : null;
-    
-  const isPastDeadline = opportunity.deadline && typeof opportunity.deadline === 'string' 
-    ? new Date(opportunity.deadline) < new Date() 
-    : false;
+
+  const { isPast: isPastDeadline } = useDeadlineStatus(opportunity.deadline);
 
   const openDocument = () => {
     window.open(opportunity.documentUri, '_blank');
@@ -64,7 +73,7 @@ export default function OpportunityDetailView({ opportunity }: OpportunityDetail
 
   const handleDeleteSuccess = () => {
     toast({
-      title: 'Success', 
+      title: 'Success',
       description: 'Opportunity deleted successfully!',
     });
     // Navigate back to dashboard
@@ -74,8 +83,8 @@ export default function OpportunityDetailView({ opportunity }: OpportunityDetail
   return (
     <div className="mx-auto max-w-4xl">
       <div className="mb-6">
-        <Button 
-          variant="outline" 
+        <Button
+          variant="outline"
           onClick={() => router.back()}
           className="flex items-center gap-2 hover:bg-primary/10 transition-colors"
         >
@@ -88,7 +97,11 @@ export default function OpportunityDetailView({ opportunity }: OpportunityDetail
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
               <CardTitle className="font-headline text-3xl">{opportunity.name}</CardTitle>
-              <div className="pt-4">
+              <div className="pt-4 flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className={cn('text-base', categoryConfig[category].color)}>
+                  <CategoryIcon className="mr-2 h-4 w-4" />
+                  {categoryConfig[category].label}
+                </Badge>
                 {formattedDeadline ? (
                   <Badge variant={isPastDeadline ? "destructive" : "secondary"} className={cn('text-base', !isPastDeadline && 'bg-accent/20 text-accent-foreground')}>
                     <CalendarDays className="mr-2 h-4 w-4" />
@@ -99,7 +112,7 @@ export default function OpportunityDetailView({ opportunity }: OpportunityDetail
                 )}
               </div>
             </div>
-            
+
             {/* Action Buttons */}
             <div className="flex items-center gap-3">
               <Button

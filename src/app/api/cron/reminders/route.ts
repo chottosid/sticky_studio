@@ -3,7 +3,20 @@ import { getOpportunitiesDueOn } from '@/lib/data';
 import { sendEmail } from '@/lib/email';
 import { addDays, format } from 'date-fns';
 
-export async function GET() {
+export async function GET(request: Request) {
+    // Verify authorization in production
+    const authHeader = request.headers.get('authorization');
+    const cronSecret = process.env.CRON_SECRET;
+
+    if (process.env.NODE_ENV === 'production') {
+        if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+            return NextResponse.json(
+                { success: false, message: 'Unauthorized' },
+                { status: 401 }
+            );
+        }
+    }
+
     try {
         const today = new Date();
 

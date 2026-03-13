@@ -13,10 +13,11 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Save } from 'lucide-react';
 import { updateOpportunityAction } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
-import type { Opportunity } from '@/lib/types';
+import type { Opportunity, OpportunityCategory } from '@/lib/types';
 
 interface EditOpportunityDialogProps {
   opportunity: Opportunity;
@@ -32,6 +33,7 @@ export function EditOpportunityDialog({
   onSuccess,
 }: EditOpportunityDialogProps) {
   const [isSaving, setIsSaving] = React.useState(false);
+  const [selectedCategory, setSelectedCategory] = React.useState<OpportunityCategory>(opportunity.category || 'job');
   const formRef = React.useRef<HTMLFormElement>(null);
   const { toast } = useToast();
 
@@ -40,17 +42,18 @@ export function EditOpportunityDialog({
 
     setIsSaving(true);
     const formData = new FormData(formRef.current);
-    
+
     // Get form values and handle null/empty cases properly
     const name = formData.get('name');
     const details = formData.get('details');
     const deadline = formData.get('deadline');
-    
+
     const opportunityData = {
       id: opportunity.id,
       name: typeof name === 'string' ? name : '',
       details: typeof details === 'string' ? details : '',
       deadline: typeof deadline === 'string' && deadline.trim() !== '' ? deadline : undefined,
+      category: selectedCategory,
     };
 
     try {
@@ -121,6 +124,23 @@ export function EditOpportunityDialog({
                 defaultValue={opportunity.deadline || ''}
                 placeholder="No deadline"
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-category">Category</Label>
+              <Select
+                value={selectedCategory}
+                onValueChange={(value) => setSelectedCategory(value as OpportunityCategory)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="job">Job</SelectItem>
+                  <SelectItem value="internship">Internship</SelectItem>
+                  <SelectItem value="contest">Contest</SelectItem>
+                  <SelectItem value="higher-study">Higher Study</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </form>

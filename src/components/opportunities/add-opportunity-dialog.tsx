@@ -16,12 +16,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PlusCircle, Loader2, Save } from 'lucide-react';
 import { addOpportunity } from '@/lib/actions';
-import { extractOpportunityDetails } from '@/ai/flows/extract-opportunity-details';
+import { extractOpportunityDetails } from '@/ai';
 import { useToast } from '@/hooks/use-toast';
 import { UnifiedImageInput } from '@/components/ui/unified-image-input';
-import type { Opportunity } from '@/lib/types';
+import type { Opportunity, OpportunityCategory } from '@/lib/types';
 
 // Helper function to safely encode text to base64 with Unicode support
 function encodeTextToBase64(text: string): string {
@@ -63,6 +64,7 @@ export function AddOpportunityDialog() {
   const [extractedData, setExtractedData] = React.useState<ExtractedData | null>(null);
   const [finalDocumentUri, setFinalDocumentUri] = React.useState('');
   const [finalDocumentType, setFinalDocumentType] = React.useState<'image' | 'pdf' | 'text' | 'unknown'>('unknown');
+  const [selectedCategory, setSelectedCategory] = React.useState<OpportunityCategory>('job');
 
   const formRef = React.useRef<HTMLFormElement>(null);
   const { toast } = useToast();
@@ -76,6 +78,7 @@ export function AddOpportunityDialog() {
     setExtractedData(null);
     setFinalDocumentUri('');
     setFinalDocumentType('unknown');
+    setSelectedCategory('job');
   };
 
   const handleFileSelect = (fileData: {
@@ -131,6 +134,10 @@ export function AddOpportunityDialog() {
       setExtractedData(result);
       setFinalDocumentUri(documentDataUri);
       setFinalDocumentType(documentType);
+      // Set category from AI extraction
+      if (result.category) {
+        setSelectedCategory(result.category);
+      }
       setStep('review');
     } catch (error) {
       console.error('Extraction failed:', error);
@@ -161,7 +168,8 @@ export function AddOpportunityDialog() {
       details: typeof details === 'string' ? details : '',
       deadline: typeof deadline === 'string' && deadline.trim() !== '' ? deadline : '',
       documentUri: finalDocumentUri,
-      documentType: finalDocumentType
+      documentType: finalDocumentType,
+      category: selectedCategory,
     }
 
     try {
@@ -304,6 +312,23 @@ export function AddOpportunityDialog() {
                     title="Format: YYYY-MM-DD or YYYY-MM"
                     required
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="category">Category</Label>
+                  <Select
+                    value={selectedCategory}
+                    onValueChange={(value) => setSelectedCategory(value as OpportunityCategory)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="job">Job</SelectItem>
+                      <SelectItem value="internship">Internship</SelectItem>
+                      <SelectItem value="contest">Contest</SelectItem>
+                      <SelectItem value="higher-study">Higher Study</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </form>

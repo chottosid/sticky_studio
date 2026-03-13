@@ -48,6 +48,7 @@ export async function initDatabase() {
         deadline DATE,
         document_uri TEXT NOT NULL,
         document_type VARCHAR(50) NOT NULL,
+        category VARCHAR(50) DEFAULT 'job',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -57,19 +58,32 @@ export async function initDatabase() {
     await query(`
       CREATE INDEX IF NOT EXISTS idx_opportunities_created_at ON opportunities(created_at DESC);
     `);
-    
+
     await query(`
       CREATE INDEX IF NOT EXISTS idx_opportunities_deadline ON opportunities(deadline) WHERE deadline IS NOT NULL;
     `);
-    
+
     await query(`
       CREATE INDEX IF NOT EXISTS idx_opportunities_name ON opportunities(name);
     `);
-    
+
     await query(`
       CREATE INDEX IF NOT EXISTS idx_opportunities_search ON opportunities USING gin(to_tsvector('english', name || ' ' || details));
     `);
-    
+
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_opportunities_category ON opportunities(category);
+    `);
+
+    // Add category column to existing table if it doesn't exist
+    try {
+      await query(`
+        ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT 'job'
+      `);
+    } catch (e) {
+      // Column might already exist, ignore error
+    }
+
     console.log('Database schema initialized successfully');
   } catch (error) {
     console.error('Error initializing database:', error);

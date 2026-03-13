@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Opportunity } from '@/lib/types';
+import { Opportunity, OpportunityCategory } from '@/lib/types';
 import OpportunityCard from './opportunity-card';
 import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
@@ -36,14 +36,16 @@ interface PaginatedOpportunityListProps {
   initialOpportunities: Opportunity[];
   initialTotal: number;
   initialStatus?: FilterStatus;
+  initialCategory?: OpportunityCategory;
 }
 
 const ITEMS_PER_PAGE = 6;
 
-export default function PaginatedOpportunityList({ 
-  initialOpportunities, 
+export default function PaginatedOpportunityList({
+  initialOpportunities,
   initialTotal,
-  initialStatus = 'upcoming'
+  initialStatus = 'upcoming',
+  initialCategory
 }: PaginatedOpportunityListProps) {
   const [opportunities, setOpportunities] = useState<Opportunity[]>(initialOpportunities);
   const [currentPage, setCurrentPage] = useState(1);
@@ -53,7 +55,8 @@ export default function PaginatedOpportunityList({
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState<FilterStatus>(initialStatus);
-  
+  const [category, setCategory] = useState<OpportunityCategory | undefined>(initialCategory);
+
   // Debounce search query to avoid too many API calls
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
@@ -62,12 +65,13 @@ export default function PaginatedOpportunityList({
     sort: SortOption,
     order: SortOrder,
     search: string | undefined,
-    statusFilter: FilterStatus
+    statusFilter: FilterStatus,
+    categoryFilter: OpportunityCategory | undefined
   ) => {
     setIsLoading(true);
     try {
-      const result = await getOpportunitiesAction(page, ITEMS_PER_PAGE, sort, order, search, statusFilter);
-      
+      const result = await getOpportunitiesAction(page, ITEMS_PER_PAGE, sort, order, search, statusFilter, categoryFilter);
+
       if (result.success) {
         setOpportunities(result.opportunities);
         setTotal(result.total);
@@ -82,12 +86,12 @@ export default function PaginatedOpportunityList({
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearchQuery, sortBy, sortOrder, status]);
+  }, [debouncedSearchQuery, sortBy, sortOrder, status, category]);
 
   // Fetch opportunities when page changes
   useEffect(() => {
-    fetchOpportunities(currentPage, sortBy, sortOrder, debouncedSearchQuery, status);
-  }, [currentPage, sortBy, sortOrder, debouncedSearchQuery, status, fetchOpportunities]);
+    fetchOpportunities(currentPage, sortBy, sortOrder, debouncedSearchQuery, status, category);
+  }, [currentPage, sortBy, sortOrder, debouncedSearchQuery, status, category, fetchOpportunities]);
 
   const handleSortChange = (value: string) => {
     const [field, order] = value.split('-') as [SortOption, SortOrder];
@@ -101,8 +105,8 @@ export default function PaginatedOpportunityList({
 
   // Refresh function to be passed to opportunity cards
   const handleRefresh = useCallback(() => {
-    fetchOpportunities(currentPage, sortBy, sortOrder, debouncedSearchQuery, status);
-  }, [currentPage, sortBy, sortOrder, debouncedSearchQuery, status, fetchOpportunities]);
+    fetchOpportunities(currentPage, sortBy, sortOrder, debouncedSearchQuery, status, category);
+  }, [currentPage, sortBy, sortOrder, debouncedSearchQuery, status, category, fetchOpportunities]);
 
   const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
 
@@ -147,6 +151,13 @@ export default function PaginatedOpportunityList({
     return rangeWithDots;
   };
 
+  const categoryLabel = category ? {
+    'job': 'Jobs',
+    'internship': 'Internships',
+    'contest': 'Contests',
+    'higher-study': 'Higher Study'
+  }[category] : '';
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4">
@@ -186,7 +197,7 @@ export default function PaginatedOpportunityList({
               </Button>
             )}
           </div>
-          
+
           <div className="flex items-center gap-4">
             <Select value={`${sortBy}-${sortOrder}`} onValueChange={handleSortChange}>
               <SelectTrigger className="w-48">
@@ -208,9 +219,9 @@ export default function PaginatedOpportunityList({
       {/* Results Summary */}
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <span>
-          {total === 0 
-            ? `No ${status === 'past' ? 'past' : 'upcoming'} opportunities found`
-            : `Showing ${(currentPage - 1) * ITEMS_PER_PAGE + 1}-${Math.min(currentPage * ITEMS_PER_PAGE, total)} of ${total} ${status === 'past' ? 'past' : 'upcoming'} opportunities`
+          {total === 0
+            ? `No ${status === 'past' ? 'past' : 'upcoming'} ${categoryLabel ? categoryLabel.toLowerCase() : 'opportunities'} found`
+            : `Showing ${(currentPage - 1) * ITEMS_PER_PAGE + 1}-${Math.min(currentPage * ITEMS_PER_PAGE, total)} of ${total} ${status === 'past' ? 'past' : 'upcoming'} ${categoryLabel ? categoryLabel.toLowerCase() : 'opportunities'}`
           }
         </span>
         {debouncedSearchQuery && (
@@ -230,11 +241,11 @@ export default function PaginatedOpportunityList({
       ) : opportunities.length === 0 ? (
         <div className="text-center py-12">
           <div className="text-muted-foreground">
-            {debouncedSearchQuery 
-              ? `No ${status === 'past' ? 'past' : 'upcoming'} opportunities match your search criteria.` 
+            {debouncedSearchQuery
+              ? `No ${status === 'past' ? 'past' : 'upcoming'} ${categoryLabel ? categoryLabel.toLowerCase() : 'opportunities'} match your search criteria.`
               : status === 'past'
-                ? 'No past opportunities yet. Completed opportunities will appear here.'
-                : 'No upcoming opportunities found. Add your first opportunity to get started!'
+                ? `No past ${categoryLabel ? categoryLabel.toLowerCase() : 'opportunities'} yet. Completed opportunities will appear here.`
+                : `No upcoming ${categoryLabel ? categoryLabel.toLowerCase() : 'opportunities'} found. Add your first opportunity to get started!`
             }
           </div>
         </div>
@@ -265,7 +276,7 @@ export default function PaginatedOpportunityList({
                 >
                   <ChevronsLeft className="h-4 w-4" />
                 </Button>
-                
+
                 <Button
                   variant="outline"
                   size="sm"
@@ -306,7 +317,7 @@ export default function PaginatedOpportunityList({
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
-                
+
                 <Button
                   variant="outline"
                   size="sm"
