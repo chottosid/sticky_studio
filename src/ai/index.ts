@@ -1,48 +1,40 @@
 'use server';
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import { OpportunityCategory } from '@/lib/types';
 
 // Gemini client
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 // Models to try in order (primary -> fallbacks)
 const MODELS = [
-  'gemini-3-flash',
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
+  'gemini-3-flash-preview',
+  'gemini-2.5-flash-preview',
+  'gemini-2.5-flash-lite-preview',
 ];
 
-// Helper: try a model with JSON response
+// Helper: try a model with JSON response (text only)
 async function tryModel(modelName: string, system: string, user: string): Promise<Record<string, unknown>> {
-  const model = genAI.getGenerativeModel({ model: modelName });
-
-  const result = await model.generateContent({
-    contents: [
-      {
-        role: 'user',
-        parts: [{ text: `${system}\n\n${user}` }],
-      },
-    ],
-    generationConfig: {
-      temperature: 0,
-      responseMimeType: 'application/json',
-    },
+  const response = await ai.models.generateContent({
+    model: modelName,
+    contents: `${system}\n\n${user}`,
+    config: {
+    responseMimeType: 'application/json',
+    temperature: 0,
+  },
   });
 
-  const response = result.response.text();
-  return JSON.parse(response || '{}');
+  return JSON.parse(response.text || '{}');
 }
 
 // Helper: try a model with image support
 async function tryModelWithImage(modelName: string, system: string, imageDataUri: string, prompt: string): Promise<Record<string, unknown>> {
-  const model = genAI.getGenerativeModel({ model: modelName });
-
   // Extract base64 data and mime type from data URI
   const [metadata, base64Data] = imageDataUri.split(';base64,');
   const mimeType = metadata.replace('data:', '');
 
-  const result = await model.generateContent({
+  const response = await ai.models.generateContent({
+    model: modelName,
     contents: [
       {
         role: 'user',
@@ -50,21 +42,20 @@ async function tryModelWithImage(modelName: string, system: string, imageDataUri
           { text: `${system}\n\n${prompt}` },
           {
             inlineData: {
-              mimeType,
-              data: base64Data,
+                mimeType,
+                data: base64Data,
             },
           },
         ],
       },
     ],
-    generationConfig: {
-      temperature: 0,
+    config: {
       responseMimeType: 'application/json',
+      temperature: 0,
     },
   });
 
-  const response = result.response.text();
-  return JSON.parse(response || '{}');
+  return JSON.parse(response.text || '{}');
 }
 
 // Helper: call Gemini with fallback models
@@ -76,7 +67,8 @@ async function ask(system: string, user: string): Promise<Record<string, unknown
       return await tryModel(modelName, system, user);
     } catch (error) {
       lastError = error as Error;
-      const isRateLimit = (error as { status?: number })?.status === 429;
+      const errorMessage = (error as Error).message || String(error);
+      const isRateLimit = errorMessage.includes('429') || errorMessage.includes('quota');
       if (isRateLimit) {
         console.warn(`Model ${modelName} rate limited, trying next...`);
         continue;
@@ -98,7 +90,8 @@ async function askWithImage(system: string, imageDataUri: string, prompt: string
       return await tryModelWithImage(modelName, system, imageDataUri, prompt);
     } catch (error) {
       lastError = error as Error;
-      const isRateLimit = (error as { status?: number })?.status === 429;
+      const errorMessage = (error as Error).message || String(error);
+      const isRateLimit = errorMessage.includes('429') || errorMessage.includes('quota');
       if (isRateLimit) {
         console.warn(`Model ${modelName} rate limited, trying next...`);
         continue;

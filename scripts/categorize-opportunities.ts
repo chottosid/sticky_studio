@@ -1,15 +1,15 @@
 import 'dotenv/config';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import { query } from '../src/lib/db';
 
 // Gemini client
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 // Models to try in order (primary -> fallbacks)
 const MODELS = [
-  'gemini-3-flash',
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
+  'gemini-3-flash-preview',
+  'gemini-2.5-flash-preview',
+  'gemini-2.5-flash-lite-preview',
 ];
 
 type OpportunityCategory = 'job' | 'internship' | 'contest' | 'higher-study';
@@ -34,21 +34,23 @@ Category:`;
   // Try each model in sequence
   for (const modelName of MODELS) {
     try {
-      const model = genAI.getGenerativeModel({ model: modelName });
-
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0, maxOutputTokens: 20 },
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: {
+          temperature: 0,
+          maxOutputTokens: 20,
+        },
       });
 
-      const category = result.response.text().trim().toLowerCase() as OpportunityCategory;
-
+      const category = response.text?.trim().toLowerCase() as OpportunityCategory;
       if (validCategories.includes(category)) {
         return category;
       }
       return 'job';
     } catch (error) {
-      const isRateLimit = (error as { status?: number })?.status === 429;
+      const errorMessage = (error as Error).message || String(error);
+      const isRateLimit = errorMessage.includes('429') || errorMessage.includes('quota');
       if (isRateLimit) {
         console.warn(`Model ${modelName} rate limited, trying next...`);
         continue;
