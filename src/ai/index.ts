@@ -5,7 +5,7 @@ import { OpportunityCategory } from '@/lib/types';
 
 // Model configuration
 const OPENROUTER_MODEL = 'google/gemini-2.5-flash';
-const GEMINI_MODEL = 'gemma-3-27b-it';
+const GEMINI_MODEL = 'gemini-3.5-flash';
 
 // Gemini client (fallback)
 const geminiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
