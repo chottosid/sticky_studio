@@ -1,9 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import { Loader2, PlusCircle, Save } from 'lucide-react';
+import Link from 'next/link';
+import { ExternalLink, Loader2, PlusCircle, Save } from 'lucide-react';
 import { OpportunityInputSchema, type ExtractionSource } from '@/domain/opportunity/schema';
-import type { ExtractionDraft, OpportunityDraftValue } from '@/lib/types';
+import type { DuplicateMatch, ExtractionDraft, OpportunityDraftValue } from '@/lib/types';
 import { addOpportunity } from '@/lib/actions';
 import { extractOpportunityDraft } from '@/lib/extraction-actions';
 import { Button } from '@/components/ui/button';
@@ -17,6 +18,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { UnifiedImageInput, type FileData } from '@/components/ui/unified-image-input';
 import { useToast } from '@/hooks/use-toast';
 import { emptyOpportunity, OpportunityFormFields } from './opportunity-form-fields';
+import { Badge } from '@/components/ui/badge';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+
+type DuplicateWarning = {
+  matches: DuplicateMatch[];
+  token: string;
+};
 
 export function AddOpportunityDialog() {
   const [open, setOpen] = React.useState(false);
@@ -29,6 +40,7 @@ export function AddOpportunityDialog() {
   const [sources, setSources] = React.useState<ExtractionSource[]>([]);
   const [isExtracting, setIsExtracting] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
+  const [duplicateWarning, setDuplicateWarning] = React.useState<DuplicateWarning | null>(null);
   const { toast } = useToast();
 
   const reset = React.useCallback(() => {
@@ -41,6 +53,7 @@ export function AddOpportunityDialog() {
     setSources([]);
     setIsExtracting(false);
     setIsSaving(false);
+    setDuplicateWarning(null);
   }, []);
 
   React.useEffect(() => {
@@ -86,7 +99,7 @@ export function AddOpportunityDialog() {
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = async (duplicateConfirmationToken?: string) => {
     const parsed = OpportunityInputSchema.safeParse(opportunity);
     if (!parsed.success) {
       toast({
@@ -103,7 +116,15 @@ export function AddOpportunityDialog() {
         opportunity: parsed.data,
         sources,
         discoveredSourceUrls: draft?.discoveredSourceUrls || [],
+        duplicateConfirmationToken,
       });
+      if (!result.success && 'code' in result && result.code === 'DUPLICATE_WARNING') {
+        setDuplicateWarning({
+          matches: result.duplicateMatches,
+          token: result.duplicateConfirmationToken,
+        });
+        return;
+      }
       if (!result.success) throw new Error(result.message);
       toast({ title: 'Opportunity saved', description: result.message });
       setOpen(false);
@@ -175,7 +196,7 @@ export function AddOpportunityDialog() {
             />
             <DialogFooter>
               <Button variant="ghost" onClick={() => setStep('input')} disabled={isSaving}>Back</Button>
-              <Button onClick={handleSave} disabled={isSaving}>
+              <Button onClick={() => void handleSave()} disabled={isSaving}>
                 {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                 {isSaving ? 'Saving…' : 'Save Opportunity'}
               </Button>
@@ -183,6 +204,58 @@ export function AddOpportunityDialog() {
           </>
         )}
       </DialogContent>
+      <AlertDialog
+        open={Boolean(duplicateWarning)}
+        onOpenChange={(nextOpen) => { if (!nextOpen && !isSaving) setDuplicateWarning(null); }}
+      >
+        <AlertDialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Possible duplicate opportunities</AlertDialogTitle>
+            <AlertDialogDescription>
+              Review every matching entry. Nothing has been uploaded or saved yet.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-3">
+            {duplicateWarning?.matches.map((match) => (
+              <div key={match.id} className="rounded-md border p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <Link
+                      href={`/opportunity/${match.id}`}
+                      target="_blank"
+                      className="font-medium text-primary hover:underline"
+                    >
+                      {match.name} <ExternalLink className="inline h-3.5 w-3.5" />
+                    </Link>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {[match.organizationName, match.deadline ? `Deadline: ${match.deadline}` : 'No deadline']
+                        .filter(Boolean).join(' · ')}
+                    </p>
+                  </div>
+                  <Badge variant={match.confidence === 'high' ? 'destructive' : 'secondary'}>
+                    {match.confidence} confidence
+                  </Badge>
+                  <Badge variant="outline">{match.category}</Badge>
+                </div>
+                <p className="mt-2 text-sm">{match.reason}</p>
+              </div>
+            ))}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSaving}>Cancel save</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSaving || !duplicateWarning}
+              onClick={(event) => {
+                event.preventDefault();
+                if (duplicateWarning) void handleSave(duplicateWarning.token);
+              }}
+            >
+              {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

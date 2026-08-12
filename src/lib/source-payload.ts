@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { ExtractionSource } from '@/lib/types';
 
 export function sourcePayload(source: ExtractionSource): { bytes: Buffer; mimeType: string } {
@@ -8,4 +9,8 @@ export function sourcePayload(source: ExtractionSource): { bytes: Buffer; mimeTy
   const match = /^data:([^;,]+);base64,([\s\S]+)$/.exec(source.dataUri);
   if (!match) throw new Error(`${source.name} has an invalid data URI.`);
   return { bytes: Buffer.from(match[2], 'base64'), mimeType: match[1] };
+}
+
+export function sourceContentSha256(source: ExtractionSource): string {
+  return createHash('sha256').update(sourcePayload(source).bytes).digest('hex');
 }

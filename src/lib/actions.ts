@@ -21,6 +21,11 @@ import {
   removeStoredSources,
   uploadOpportunitySources,
 } from '@/lib/source-storage';
+import {
+  createDuplicateConfirmationToken,
+  findDuplicateMatches,
+  verifyDuplicateConfirmationToken,
+} from '@/lib/duplicates';
 
 export async function isAuthenticated() {
   const cookieStore = await cookies();
@@ -66,6 +71,7 @@ const SaveOpportunityRequestSchema = z.object({
   opportunity: OpportunityInputSchema,
   sources: z.array(ExtractionSourceSchema).min(1).max(5),
   discoveredSourceUrls: z.array(z.string().url().max(2_000)).max(20).default([]),
+  duplicateConfirmationToken: z.string().max(5_000).optional(),
 });
 
 export async function addOpportunity(input: unknown) {
@@ -81,6 +87,28 @@ export async function addOpportunity(input: unknown) {
 
   let uploadedSources: Awaited<ReturnType<typeof uploadOpportunitySources>> = [];
   try {
+    const duplicateInput = {
+      opportunity: parsed.data.opportunity,
+      sources: parsed.data.sources,
+      discoveredSourceUrls: parsed.data.discoveredSourceUrls,
+    };
+    const confirmed = await verifyDuplicateConfirmationToken(
+      duplicateInput,
+      parsed.data.duplicateConfirmationToken,
+    );
+    if (!confirmed) {
+      const duplicateMatches = await findDuplicateMatches(duplicateInput);
+      if (duplicateMatches.length) {
+        return {
+          success: false as const,
+          code: 'DUPLICATE_WARNING' as const,
+          message: 'Possible duplicate opportunities found.',
+          duplicateMatches,
+          duplicateConfirmationToken: await createDuplicateConfirmationToken(duplicateInput, duplicateMatches),
+        };
+      }
+    }
+
     uploadedSources = await uploadOpportunitySources(parsed.data.sources);
     const opportunity = await saveOpportunity(
       parsed.data.opportunity,

@@ -8,6 +8,7 @@ import type { DocumentType, Opportunity, OpportunitySource } from '@/lib/types';
 import { getClient, query } from './db';
 import { formatDeadline } from './utils';
 import { attachSignedUrls, type UploadedSource } from './source-storage';
+import { canonicalizeUrl } from './duplicate-normalization';
 
 type Queryable = Pick<PoolClient, 'query'>;
 
@@ -157,15 +158,25 @@ export async function saveOpportunity(
     for (const source of sources) {
       await insertSource(client, saved.id, source);
     }
-    for (const url of discoveredSourceUrls) {
+    const sourceUrlByCanonical = new Map<string, string>();
+    for (const url of [
+      ...discoveredSourceUrls,
+      ...(opportunity.applicationUrl ? [opportunity.applicationUrl] : []),
+    ]) {
+      const canonical = canonicalizeUrl(url);
+      if (canonical && !sourceUrlByCanonical.has(canonical)) sourceUrlByCanonical.set(canonical, url);
+    }
+    const sourceUrls = Array.from(sourceUrlByCanonical.values());
+    for (const url of sourceUrls) {
       await insertSource(client, saved.id, {
         sourceType: 'enriched-url', originalName: null, mimeType: 'text/html', storagePath: null, sourceUrl: url,
+        contentSha256: null, canonicalUrl: canonicalizeUrl(url),
       });
     }
     await client.query('COMMIT');
     saved.sources = [
       ...sources.map((source, index) => ({ id: `new-${index}`, ...source })),
-      ...discoveredSourceUrls.map((url, index) => ({
+      ...sourceUrls.map((url, index) => ({
         id: `url-${index}`,
         sourceType: 'enriched-url' as const,
         originalName: null,
@@ -189,13 +200,18 @@ async function insertSource(
   source: {
     sourceType: OpportunitySource['sourceType']; originalName: string | null; mimeType: string | null;
     storagePath: string | null; sourceUrl: string | null;
+    contentSha256: string | null; canonicalUrl: string | null;
   },
 ) {
   await client.query(
     `INSERT INTO opportunity_sources (
-      opportunity_id, source_type, original_name, mime_type, storage_path, source_url
-    ) VALUES ($1, $2, $3, $4, $5, $6)`,
-    [opportunityId, source.sourceType, source.originalName, source.mimeType, source.storagePath, source.sourceUrl],
+      opportunity_id, source_type, original_name, mime_type, storage_path, source_url,
+      content_sha256, canonical_url
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      opportunityId, source.sourceType, source.originalName, source.mimeType,
+      source.storagePath, source.sourceUrl, source.contentSha256, source.canonicalUrl,
+    ],
   );
 }
 

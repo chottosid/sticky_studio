@@ -44,9 +44,10 @@ After the new deployment is healthy, run:
 
 ```bash
 npm run db:migrate-sources
+npm run db:backfill-duplicates
 ```
 
-The script is idempotent. It uploads only rows without an existing stored source, downloads each object, compares its SHA-256 hash, and then inserts the source record. It intentionally leaves `document_uri` untouched for rollback safety.
+Both scripts are idempotent. The first uploads only rows without an existing stored source, downloads each object, compares its SHA-256 hash, and then inserts the source record. The duplicate-signal backfill canonicalizes historical source/application URLs and records SHA-256 hashes for stored files. Without Supabase storage credentials it still backfills URLs and reports the file hashes it skipped. They intentionally leave `document_uri` untouched for rollback safety.
 
 Verify:
 
@@ -58,6 +59,10 @@ WHERE COALESCE(document_uri, '') <> '';
 SELECT COUNT(DISTINCT opportunity_id) AS migrated_opportunities
 FROM opportunity_sources
 WHERE storage_path IS NOT NULL;
+
+SELECT COUNT(*) AS sources_with_duplicate_signals
+FROM opportunity_sources
+WHERE canonical_url IS NOT NULL OR content_sha256 IS NOT NULL;
 ```
 
 Open each existing opportunity in the UI and confirm its signed source link works. After at least one stable release and a fresh backup, a separate cleanup migration may remove legacy base64 data; it is deliberately not included here.
@@ -65,9 +70,9 @@ Open each existing opportunity in the UI and confirm its signed source link work
 ## 5. Operational checks and rollback
 
 - Confirm extraction produces a review draft and no row/storage object appears before **Save Opportunity**.
+- Submit a paraphrase of an existing announcement, review every proposed match, cancel once, then confirm **Save anyway** only saves after explicit approval.
 - Save one no-deadline opportunity and confirm it appears under Upcoming without reminder errors.
 - Confirm 7/3/1-day reminders still run through `/api/cron/reminders` with `CRON_SECRET`.
 - Confirm the Vercel cleanup cron is gone; existing history must not be deleted.
 
 If the application deployment must be rolled back, the additive columns do not break the previous code and legacy `document_uri` values are still present. Roll back the application first; do not drop new columns or the bucket during an incident.
-

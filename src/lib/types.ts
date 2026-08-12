@@ -4,6 +4,7 @@ export type {
   Evidence,
   ExtractionDraft,
   ExtractionSource,
+  DuplicateMatch,
   HigherStudyAttributes,
   OpportunityCategory,
   OpportunityDraftValue,

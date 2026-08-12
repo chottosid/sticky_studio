@@ -133,6 +133,16 @@ export const ExtractionRequestSchema = z.object({
   sources: z.array(ExtractionSourceSchema).min(1).max(5),
 });
 
+export const DuplicateMatchSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  category: OpportunityCategorySchema,
+  organizationName: z.string().nullable(),
+  deadline: z.string().nullable(),
+  confidence: z.enum(['high', 'medium', 'low']),
+  reason: z.string().max(500),
+});
+
 export const SaveSourceSchema = ExtractionSourceSchema;
 
 export type OpportunityCategory = z.infer<typeof OpportunityCategorySchema>;
@@ -144,3 +154,4 @@ export type ContestAttributes = z.infer<typeof ContestAttributesSchema>;
 export type ExtractionDraft = z.infer<typeof ExtractionDraftSchema>;
 export type ExtractionSource = z.infer<typeof ExtractionSourceSchema>;
 export type Evidence = z.infer<typeof EvidenceSchema>;
+export type DuplicateMatch = z.infer<typeof DuplicateMatchSchema>;

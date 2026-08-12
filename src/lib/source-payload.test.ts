@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sourcePayload } from './source-payload';
+import { sourceContentSha256, sourcePayload } from './source-payload';
 
 describe('source payload', () => {
   it('uses the bucket-compatible MIME type for UTF-8 pasted text', () => {
@@ -13,5 +13,8 @@ describe('source payload', () => {
 
     expect(payload.mimeType).toBe('text/plain');
     expect(payload.bytes.toString('utf8')).toBe('Hello বাংলা');
+    expect(sourceContentSha256({
+      id: 'source-1', kind: 'text', name: 'Pasted text', mimeType: 'text/plain', text: 'Hello বাংলা',
+    })).toMatch(/^[a-f0-9]{64}$/);
   });
 });

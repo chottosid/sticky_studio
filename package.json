@@ -12,7 +12,8 @@
     "check": "npm run lint && npm run typecheck && npm run test",
     "db:migrate": "node scripts/migrate-db.js",
     "storage:setup": "node scripts/setup-storage.js",
-    "db:migrate-sources": "node scripts/migrate-legacy-sources.js"
+    "db:migrate-sources": "node scripts/migrate-legacy-sources.js",
+    "db:backfill-duplicates": "node scripts/backfill-duplicate-signals.js"
   },
   "dependencies": {
     "@google/genai": "^1.45.0",

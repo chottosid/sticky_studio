@@ -2,7 +2,7 @@ import 'server-only';
 
 import { createClient } from '@supabase/supabase-js';
 import type { ExtractionSource, OpportunitySource } from '@/lib/types';
-import { sourcePayload } from './source-payload';
+import { sourceContentSha256, sourcePayload } from './source-payload';
 
 export const OPPORTUNITY_SOURCE_BUCKET = 'opportunity-sources';
 
@@ -28,6 +28,8 @@ export type UploadedSource = {
   mimeType: string;
   storagePath: string;
   sourceUrl: null;
+  contentSha256: string;
+  canonicalUrl: null;
 };
 
 export async function uploadOpportunitySources(sources: ExtractionSource[]): Promise<UploadedSource[]> {
@@ -55,6 +57,8 @@ export async function uploadOpportunitySources(sources: ExtractionSource[]): Pro
         mimeType,
         storagePath,
         sourceUrl: null,
+        contentSha256: sourceContentSha256(source),
+        canonicalUrl: null,
       });
     }
     return uploaded;
