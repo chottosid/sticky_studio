@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createClient } from '@supabase/supabase-js';
 import type { ExtractionSource, OpportunitySource } from '@/lib/types';
+import { sourcePayload } from './source-payload';
 
 export const OPPORTUNITY_SOURCE_BUCKET = 'opportunity-sources';
 
@@ -14,16 +15,6 @@ function getStorageClient() {
   return createClient(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-}
-
-function sourceBody(source: ExtractionSource): { bytes: Buffer; mimeType: string } {
-  if (source.kind === 'text') {
-    return { bytes: Buffer.from(source.text, 'utf8'), mimeType: 'text/plain; charset=utf-8' };
-  }
-
-  const match = /^data:([^;,]+);base64,([\s\S]+)$/.exec(source.dataUri);
-  if (!match) throw new Error(`${source.name} has an invalid data URI.`);
-  return { bytes: Buffer.from(match[2], 'base64'), mimeType: match[1] };
 }
 
 function safeFileName(name: string): string {
@@ -43,14 +34,14 @@ export async function uploadOpportunitySources(sources: ExtractionSource[]): Pro
   const client = getStorageClient();
   const groupId = crypto.randomUUID();
   const uploaded: UploadedSource[] = [];
-  const totalBytes = sources.reduce((total, source) => total + sourceBody(source).bytes.length, 0);
+  const totalBytes = sources.reduce((total, source) => total + sourcePayload(source).bytes.length, 0);
   if (totalBytes > 10 * 1024 * 1024) {
     throw new Error('The combined source size must be 10 MB or less.');
   }
 
   try {
     for (const [index, source] of sources.entries()) {
-      const { bytes, mimeType } = sourceBody(source);
+      const { bytes, mimeType } = sourcePayload(source);
       const originalName = source.kind === 'text' ? `${source.name}.txt` : source.name;
       const storagePath = `${groupId}/${index + 1}-${safeFileName(originalName)}`;
       const { error } = await client.storage

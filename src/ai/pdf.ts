@@ -15,7 +15,14 @@ async function loadPdfParse() {
   defineNodeCanvasGlobal('DOMMatrix', DOMMatrix);
   defineNodeCanvasGlobal('ImageData', ImageData);
   defineNodeCanvasGlobal('Path2D', Path2D);
-  return import('pdf-parse');
+  const [pdfParse, worker] = await Promise.all([
+    import('pdf-parse'),
+    import('pdf-parse/worker'),
+  ]);
+  // Use the package's embedded worker so serverless deployments do not depend
+  // on a dynamically imported file being discovered by the build tracer.
+  pdfParse.PDFParse.setWorker(worker.getData());
+  return pdfParse;
 }
 
 export async function extractPdfText(bytes: Uint8Array, maxChars = 120_000): Promise<string> {
