@@ -1,7 +1,7 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
-import { PDFParse } from 'pdf-parse';
 import type { PreparedSource } from './input';
+import { extractPdfText } from './pdf';
 
 const MAX_PAGES = 4;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
@@ -121,15 +121,6 @@ function linksFromHtml(html: string, baseUrl: URL): string[] {
   return Array.from(new Set(links));
 }
 
-async function pdfText(bytes: Uint8Array): Promise<string> {
-  const parser = new PDFParse({ data: bytes });
-  try {
-    return (await parser.getText()).text.slice(0, 120_000);
-  } finally {
-    await parser.destroy();
-  }
-}
-
 async function fetchPage(value: string, sourceId: string): Promise<FetchedPage> {
   let url = await validatePublicUrl(value);
   let response: Response | null = null;
@@ -160,7 +151,7 @@ async function fetchPage(value: string, sourceId: string): Promise<FetchedPage> 
       label: url.toString(),
       sourceUrl: url.toString(),
       hostname: url.hostname,
-      text: await pdfText(bytes),
+      text: await extractPdfText(bytes),
       links: [],
     };
   }

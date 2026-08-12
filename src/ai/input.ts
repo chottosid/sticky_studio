@@ -1,8 +1,8 @@
-import { PDFParse } from 'pdf-parse';
 import {
   ExtractionRequestSchema,
   type ExtractionSource,
 } from '@/domain/opportunity/schema';
+import { extractPdfText } from './pdf';
 
 export const MAX_EXTRACTION_BYTES = 10 * 1024 * 1024;
 const MAX_SOURCE_TEXT_CHARS = 120_000;
@@ -28,16 +28,6 @@ function decodeDataUri(dataUri: string): { mimeType: string; bytes: Buffer } {
 export function extractionSourceSize(source: ExtractionSource): number {
   if (source.kind === 'text') return Buffer.byteLength(source.text, 'utf8');
   return decodeDataUri(source.dataUri).bytes.length;
-}
-
-async function extractPdfText(bytes: Buffer): Promise<string> {
-  const parser = new PDFParse({ data: new Uint8Array(bytes) });
-  try {
-    const result = await parser.getText();
-    return result.text.slice(0, MAX_SOURCE_TEXT_CHARS);
-  } finally {
-    await parser.destroy();
-  }
 }
 
 export async function prepareExtractionSources(input: unknown): Promise<{
@@ -74,7 +64,7 @@ export async function prepareExtractionSources(input: unknown): Promise<{
     if (decoded.mimeType !== 'application/pdf') {
       throw new Error(`${source.name} is not a PDF.`);
     }
-    const text = await extractPdfText(decoded.bytes);
+    const text = await extractPdfText(new Uint8Array(decoded.bytes), MAX_SOURCE_TEXT_CHARS);
     if (!text.trim()) {
       throw new Error(`${source.name} contains no extractable text. Try uploading screenshots of its pages.`);
     }
@@ -93,4 +83,3 @@ export function extractHttpUrls(text: string): string[] {
 export function urlsFromPreparedSources(sources: PreparedSource[]): string[] {
   return Array.from(new Set(sources.flatMap((source) => extractHttpUrls(source.text || ''))));
 }
-
