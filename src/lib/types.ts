@@ -1,12 +1,35 @@
-export type OpportunityCategory = 'job' | 'internship' | 'contest' | 'higher-study';
+export type {
+  ContestAttributes,
+  EmploymentAttributes,
+  Evidence,
+  ExtractionDraft,
+  ExtractionSource,
+  HigherStudyAttributes,
+  OpportunityCategory,
+  OpportunityDraftValue,
+  OpportunityInput,
+} from '@/domain/opportunity/schema';
 
-export type Opportunity = {
+import type { OpportunityInput } from '@/domain/opportunity/schema';
+
+export type DocumentType = 'image' | 'pdf' | 'text' | 'unknown';
+
+export type OpportunitySource = {
   id: string;
-  name: string;
-  details: string;
-  deadline?: string | null;
-  documentUri: string;
-  documentType: 'image' | 'pdf' | 'text' | 'unknown';
-  category: OpportunityCategory;
+  sourceType: 'upload' | 'pasted-text' | 'submitted-url' | 'enriched-url';
+  originalName: string | null;
+  mimeType: string | null;
+  storagePath: string | null;
+  sourceUrl: string | null;
+  signedUrl?: string | null;
+};
+
+export type Opportunity = OpportunityInput & {
+  id: string;
+  sources: OpportunitySource[];
   created_at?: string;
+  updated_at?: string;
+  /** Compatibility fields while legacy document_uri rows are migrated. */
+  documentUri?: string;
+  documentType?: DocumentType;
 };

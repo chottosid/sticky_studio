@@ -4,16 +4,31 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { saveOpportunity, getOpportunities, deleteOpportunity, updateOpportunity, deleteOldOpportunities } from '@/lib/data';
-import { Opportunity, OpportunityCategory } from './types';
+import {
+  ExtractionSourceSchema,
+  OpportunityInputSchema,
+  type OpportunityCategory,
+} from '@/domain/opportunity/schema';
+import { deleteOpportunity, getOpportunities, saveOpportunity, updateOpportunity } from '@/lib/data';
 import { sendNewOpportunityEmail, sendTestEmail } from '@/lib/email';
-
-const SESSION_COOKIE_NAME = 'session';
+import {
+  createSessionToken,
+  SESSION_COOKIE_NAME,
+  SESSION_MAX_AGE_SECONDS,
+  verifySessionToken,
+} from '@/lib/auth/session';
+import {
+  removeStoredSources,
+  uploadOpportunitySources,
+} from '@/lib/source-storage';
 
 export async function isAuthenticated() {
   const cookieStore = await cookies();
-  const session = cookieStore.get(SESSION_COOKIE_NAME);
-  return session?.value === 'authenticated';
+  return verifySessionToken(cookieStore.get(SESSION_COOKIE_NAME)?.value);
+}
+
+async function requireAuthentication() {
+  if (!(await isAuthenticated())) throw new Error('Unauthorized');
 }
 
 const loginSchema = z.object({
@@ -21,33 +36,23 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-export async function login(prevState: any, formData: FormData) {
-  try {
-    const parsed = loginSchema.safeParse(Object.fromEntries(formData));
+export async function login(_previousState: unknown, formData: FormData) {
+  const parsed = loginSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { message: 'Invalid email or password format.' };
 
-    if (!parsed.success) {
-      return { message: 'Invalid email or password format.' };
-    }
-
-    const { email, password } = parsed.data;
-
-    const FAKE_USER_EMAIL = process.env.APP_USER_EMAIL;
-    const FAKE_USER_PASSWORD = process.env.APP_USER_PASSWORD;
-
-    if (email === FAKE_USER_EMAIL && password === FAKE_USER_PASSWORD) {
-      const cookieStore = await cookies();
-      cookieStore.set(SESSION_COOKIE_NAME, 'authenticated', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 60 * 60 * 24 * 7, // One week
-        path: '/',
-      });
-    } else {
-      return { message: 'Invalid credentials.' };
-    }
-  } catch (error) {
-    return { message: 'An unexpected error occurred.' };
+  const { email, password } = parsed.data;
+  if (email !== process.env.APP_USER_EMAIL || password !== process.env.APP_USER_PASSWORD) {
+    return { message: 'Invalid credentials.' };
   }
+
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE_NAME, await createSessionToken(), {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: SESSION_MAX_AGE_SECONDS,
+    path: '/',
+  });
   redirect('/');
 }
 
@@ -57,164 +62,120 @@ export async function logout() {
   redirect('/login');
 }
 
-const AddOpportunitySchema = z.object({
-  name: z.string().min(1, 'Name is required.'),
-  details: z.string().min(1, 'Details are required.'),
-  deadline: z.string().min(1, 'Deadline is required.'), // Changed to required
-  documentUri: z.string().min(1, 'Document URI is missing.'),
-  documentType: z.enum(['image', 'pdf', 'text', 'unknown']),
-  category: z.enum(['job', 'internship', 'contest', 'higher-study']).default('job'),
+const SaveOpportunityRequestSchema = z.object({
+  opportunity: OpportunityInputSchema,
+  sources: z.array(ExtractionSourceSchema).min(1).max(5),
+  discoveredSourceUrls: z.array(z.string().url().max(2_000)).max(20).default([]),
 });
 
-type AddOpportunityInput = z.infer<typeof AddOpportunitySchema>;
-
-export async function addOpportunity(input: AddOpportunityInput) {
-  const parsed = AddOpportunitySchema.safeParse(input);
-
+export async function addOpportunity(input: unknown) {
+  if (!(await isAuthenticated())) return { success: false as const, message: 'Unauthorized' };
+  const parsed = SaveOpportunityRequestSchema.safeParse(input);
   if (!parsed.success) {
-    console.log(parsed.error.flatten().fieldErrors);
     return {
-      success: false,
-      message: 'Invalid form data. Please ensure all fields are filled correctly.',
+      success: false as const,
+      message: 'Please correct the highlighted opportunity fields.',
       errors: parsed.error.flatten().fieldErrors,
     };
   }
 
-  let { name, details, deadline, documentUri, documentType, category } = parsed.data;
-
-  // Handle month-only input (YYYY-MM) -> force to 1st of month
-  if (deadline && /^\d{4}-\d{2}$/.test(deadline)) {
-    deadline = `${deadline}-01`;
-  }
-
+  let uploadedSources: Awaited<ReturnType<typeof uploadOpportunitySources>> = [];
   try {
-    const newOpportunity = await saveOpportunity({
-      name,
-      details,
-      deadline,
-      documentUri: documentUri,
-      documentType: documentType,
-      category: category,
-    });
-
-    // Send email notification
-    await sendNewOpportunityEmail(newOpportunity);
-
+    uploadedSources = await uploadOpportunitySources(parsed.data.sources);
+    const opportunity = await saveOpportunity(
+      parsed.data.opportunity,
+      uploadedSources,
+      Array.from(new Set(parsed.data.discoveredSourceUrls)),
+    );
+    await sendNewOpportunityEmail(opportunity);
     revalidatePath('/');
-    return { message: `Successfully added "${newOpportunity.name}"!`, success: true };
-  } catch (e) {
-    console.error(e);
-    return { message: 'Failed to save the opportunity. Please try again.', success: false };
+    return { success: true as const, message: `Successfully added "${opportunity.name}"!`, opportunity };
+  } catch (error) {
+    if (uploadedSources.length) {
+      await removeStoredSources(uploadedSources.map((source) => source.storagePath));
+    }
+    console.error('Could not save opportunity:', error);
+    return {
+      success: false as const,
+      message: error instanceof Error ? error.message : 'Failed to save the opportunity.',
+    };
   }
 }
 
 export async function getOpportunitiesAction(
-  page: number = 1,
-  limit: number = 10,
-  sortBy: string = 'created_at',
+  page = 1,
+  limit = 10,
+  sortBy = 'created_at',
   sortOrder: 'ASC' | 'DESC' = 'DESC',
   searchQuery?: string,
   status?: 'upcoming' | 'past',
-  category?: OpportunityCategory
+  category?: OpportunityCategory,
 ) {
+  if (!(await isAuthenticated())) {
+    return { success: false as const, opportunities: [], total: 0, hasMore: false };
+  }
   try {
-    const result = await getOpportunities(page, limit, sortBy, sortOrder, searchQuery, status, category);
-    return { success: true, ...result };
+    return {
+      success: true as const,
+      ...await getOpportunities(page, limit, sortBy, sortOrder, searchQuery, status, category),
+    };
   } catch (error) {
     console.error('Error fetching opportunities:', error);
-    return { success: false, opportunities: [], total: 0, hasMore: false };
+    return { success: false as const, opportunities: [], total: 0, hasMore: false };
   }
 }
 
 export async function deleteOpportunityAction(id: string) {
+  if (!(await isAuthenticated())) return { success: false as const, message: 'Unauthorized' };
   try {
-    const deleted = await deleteOpportunity(id);
-    if (deleted) {
-      revalidatePath('/');
-      return { success: true, message: 'Opportunity deleted successfully' };
-    } else {
-      return { success: false, message: 'Opportunity not found' };
-    }
+    const result = await deleteOpportunity(id);
+    if (!result.deleted) return { success: false as const, message: 'Opportunity not found' };
+    await removeStoredSources(result.storagePaths);
+    revalidatePath('/');
+    return { success: true as const, message: 'Opportunity deleted successfully' };
   } catch (error) {
     console.error('Error deleting opportunity:', error);
-    return { success: false, message: 'Failed to delete opportunity' };
+    return { success: false as const, message: 'Failed to delete opportunity' };
   }
 }
 
-const UpdateOpportunitySchema = z.object({
-  id: z.string().min(1, 'ID is required'),
-  name: z.string().min(1, 'Name is required').optional(),
-  details: z.string().min(1, 'Details are required').optional(),
-  deadline: z.string().optional().nullable().transform(val => val || undefined),
-  documentUri: z.string().optional(),
-  documentType: z.enum(['image', 'pdf', 'text', 'unknown']).optional(),
-  category: z.enum(['job', 'internship', 'contest', 'higher-study']).optional(),
+const UpdateOpportunityRequestSchema = z.object({
+  id: z.string().min(1),
+  opportunity: OpportunityInputSchema,
 });
 
-type UpdateOpportunityInput = z.infer<typeof UpdateOpportunitySchema>;
-
-export async function updateOpportunityAction(input: UpdateOpportunityInput) {
-  const parsed = UpdateOpportunitySchema.safeParse(input);
-
+export async function updateOpportunityAction(input: unknown) {
+  if (!(await isAuthenticated())) return { success: false as const, message: 'Unauthorized' };
+  const parsed = UpdateOpportunityRequestSchema.safeParse(input);
   if (!parsed.success) {
-    return {
-      success: false,
-      message: 'Invalid form data. Please ensure all fields are filled correctly.',
-      errors: parsed.error.flatten().fieldErrors,
-    };
+    return { success: false as const, message: 'Please correct the highlighted opportunity fields.' };
   }
 
-  const { id, ...updateData } = parsed.data;
-
   try {
-    const updatedOpportunity = await updateOpportunity(id, updateData);
-
-    if (updatedOpportunity) {
-      revalidatePath('/');
-      revalidatePath(`/opportunity/${id}`);
-      return {
-        success: true,
-        message: `Successfully updated "${updatedOpportunity.name}"!`,
-        opportunity: updatedOpportunity
-      };
-    } else {
-      return { success: false, message: 'Opportunity not found' };
-    }
+    const opportunity = await updateOpportunity(parsed.data.id, parsed.data.opportunity);
+    if (!opportunity) return { success: false as const, message: 'Opportunity not found' };
+    revalidatePath('/');
+    revalidatePath(`/opportunity/${parsed.data.id}`);
+    return {
+      success: true as const,
+      message: `Successfully updated "${opportunity.name}"!`,
+      opportunity,
+    };
   } catch (error) {
     console.error('Update failed:', error);
-    return { message: 'Failed to update the opportunity. Please try again.', success: false };
+    return { success: false as const, message: 'Failed to update the opportunity.' };
   }
 }
 
 export async function sendTestEmailAction() {
-  if (!(await isAuthenticated())) {
-    return { success: false, message: 'Unauthorized' };
-  }
-
   try {
+    await requireAuthentication();
     const info = await sendTestEmail();
-    if (info) {
-      return { success: true, message: 'Test email sent successfully! Check your configured inbox.' };
-    } else {
-      return { success: false, message: 'Failed to send test email. Check server logs for details.' };
-    }
+    return info
+      ? { success: true as const, message: 'Test email sent successfully.' }
+      : { success: false as const, message: 'Email was not sent. Check server configuration.' };
   } catch (error) {
     console.error('Test email action failed:', error);
-    return { success: false, message: 'An error occurred while sending the test email.' };
-  }
-}
-
-export async function cleanupOldOpportunities() {
-  if (!(await isAuthenticated())) {
-    return { success: false, message: 'Unauthorized' };
-  }
-
-  try {
-    const result = await deleteOldOpportunities();
-    revalidatePath('/');
-    return { success: true, message: `Deleted ${result.deleted} old opportunities`, deleted: result.deleted };
-  } catch (error) {
-    console.error('Cleanup failed:', error);
-    return { success: false, message: 'Failed to cleanup old opportunities' };
+    return { success: false as const, message: 'An error occurred while sending the test email.' };
   }
 }

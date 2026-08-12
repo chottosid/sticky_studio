@@ -3,8 +3,6 @@
 import * as React from 'react';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { useRouter } from 'next/navigation';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,7 +19,6 @@ function SubmitButton() {
 }
 
 export function LoginForm() {
-  const router = useRouter();
   const { toast } = useToast();
   const [state, formAction] = useActionState(login, undefined);
 

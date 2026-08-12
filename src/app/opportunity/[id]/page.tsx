@@ -5,9 +5,9 @@ import { getOpportunityById } from '@/lib/data';
 import { isAuthenticated } from '@/lib/actions';
 
 type OpportunityPageProps = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
 export default async function OpportunityPage({ params }: OpportunityPageProps) {

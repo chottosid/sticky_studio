@@ -32,7 +32,7 @@ export async function GET(request: Request) {
             const dateString = format(targetDate, 'yyyy-MM-dd');
 
             // Get opportunities that are due AND haven't had this reminder sent yet
-            const result = await query(`
+            const result = await query<{ id: number; name: string; details: string; deadline: string }>(`
                 SELECT id, name, details, deadline
                 FROM opportunities
                 WHERE deadline = $1
@@ -67,7 +67,10 @@ export async function GET(request: Request) {
     }
 }
 
-async function sendReminderEmail(opportunity: any, daysLeft: number) {
+async function sendReminderEmail(
+    opportunity: { id: number; name: string; details: string; deadline: string },
+    daysLeft: number,
+) {
     const subject = `Reminder: "${opportunity.name}" due in ${daysLeft} days`;
     const html = `
     <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 5px;">
@@ -85,5 +88,6 @@ async function sendReminderEmail(opportunity: any, daysLeft: number) {
     </div>
   `;
 
-    await sendEmail(subject, html);
+    const info = await sendEmail(subject, html);
+    if (!info) throw new Error('Reminder email was not sent.');
 }

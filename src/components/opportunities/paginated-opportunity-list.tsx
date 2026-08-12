@@ -11,23 +11,7 @@ import { ChevronLeft, ChevronRight, Search, X, ChevronsLeft, ChevronsRight } fro
 import { getOpportunitiesAction } from '@/lib/actions';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSearchParams } from 'next/navigation';
-
-// Simple debounce hook inline
-function useDebounce<T>(value: T, delay: number): T {
-  const [debouncedValue, setDebouncedValue] = useState<T>(value);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
-
-    return () => {
-      clearTimeout(handler);
-    };
-  }, [value, delay]);
-
-  return debouncedValue;
-}
+import { useDebounce } from '@/hooks/use-debounce';
 
 type SortOption = 'created_at' | 'deadline' | 'name';
 type SortOrder = 'ASC' | 'DESC';
@@ -112,11 +96,6 @@ export default function PaginatedOpportunityList({
   const clearSearch = () => {
     setSearchQuery('');
   };
-
-  // Refresh function to be passed to opportunity cards
-  const handleRefresh = useCallback(() => {
-    fetchOpportunities(currentPage, sortBy, sortOrder, debouncedSearchQuery, status, category);
-  }, [currentPage, sortBy, sortOrder, debouncedSearchQuery, status, category, fetchOpportunities]);
 
   const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
 
@@ -246,7 +225,7 @@ export default function PaginatedOpportunityList({
           }
         </span>
         {debouncedSearchQuery && (
-          <span>Search: "{debouncedSearchQuery}"</span>
+          <span>{`Search: "${debouncedSearchQuery}"`}</span>
         )}
       </div>
 

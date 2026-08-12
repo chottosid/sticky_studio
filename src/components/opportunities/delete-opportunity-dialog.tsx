@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -70,7 +69,7 @@ export function DeleteOpportunityDialog({
           <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
           <AlertDialogDescription>
             This action cannot be undone. This will permanently delete the opportunity{' '}
-            <strong>"{opportunity.name}"</strong> and remove all associated data.
+            <strong>{`"${opportunity.name}"`}</strong> and remove all associated data.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

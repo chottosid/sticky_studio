@@ -1,16 +1,20 @@
 'use client';
 
 import * as React from 'react';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Upload, Image as ImageIcon, Loader2, X, ClipboardPaste } from 'lucide-react';
+import { Upload, Image as ImageIcon, X, ClipboardPaste } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
-interface FileData {
+export interface FileData {
+  id: string;
   name: string;
   dataUri: string;
-  type: 'image' | 'pdf' | 'unknown';
+  type: 'image' | 'pdf';
+  mimeType: string;
+  size: number;
 }
 
 interface UnifiedImageInputProps {
@@ -34,23 +38,20 @@ export function UnifiedImageInput({
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  const processFile = React.useCallback((file: File): FileData => {
+  const processFile = React.useCallback((file: File): Promise<FileData> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (event) => {
         const dataUri = event.target?.result as string;
-        let fileType: 'image' | 'pdf' | 'unknown' = 'unknown';
-
-        if (file.type.startsWith('image/')) {
-          fileType = 'image';
-        } else if (file.type === 'application/pdf') {
-          fileType = 'pdf';
-        }
+        const fileType: 'image' | 'pdf' = file.type.startsWith('image/') ? 'image' : 'pdf';
 
         resolve({
+          id: crypto.randomUUID(),
           name: file.name,
           dataUri,
           type: fileType,
+          mimeType: file.type,
+          size: file.size,
         });
       };
       reader.readAsDataURL(file);
@@ -61,6 +62,16 @@ export function UnifiedImageInput({
     const validFiles = files.filter(
       file => file.type.startsWith('image/') || file.type === 'application/pdf'
     );
+
+    const totalSize = validFiles.reduce((total, file) => total + file.size, 0);
+    if (totalSize > 10 * 1024 * 1024) {
+      toast({
+        variant: 'destructive',
+        title: 'Files Too Large',
+        description: 'The combined file size must be 10 MB or less.',
+      });
+      return;
+    }
 
     if (validFiles.length === 0) {
       toast({
@@ -275,12 +286,15 @@ export function UnifiedImageInput({
             {/* File thumbnails */}
             <div className="flex flex-wrap gap-2 justify-center max-w-full">
               {selectedFiles.map((file, index) => (
-                <div key={index} className="relative group">
+                <div key={file.id} className="relative group">
                   {file.type === 'image' ? (
                     <div className="w-16 h-16 rounded border overflow-hidden">
-                      <img
+                      <Image
                         src={file.dataUri}
                         alt={file.name}
+                        width={64}
+                        height={64}
+                        unoptimized
                         className="w-full h-full object-cover"
                       />
                     </div>

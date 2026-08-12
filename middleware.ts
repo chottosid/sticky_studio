@@ -1,21 +1,22 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { SESSION_COOKIE_NAME, verifySessionToken } from '@/lib/auth/session';
 
-const PROTECTED_ROUTES = ['/', '/opportunity'];
 const AUTH_ROUTE = '/login';
 
-export function middleware(request: NextRequest) {
-  const session = request.cookies.get('session');
+export async function middleware(request: NextRequest) {
+  const session = request.cookies.get(SESSION_COOKIE_NAME);
   const { pathname } = request.nextUrl;
+  const authenticated = await verifySessionToken(session?.value);
 
-  const isProtectedRoute = PROTECTED_ROUTES.some((route) => pathname.startsWith(route));
+  const isProtectedRoute = pathname === '/' || pathname.startsWith('/opportunity');
 
-  if (!session && isProtectedRoute) {
+  if (!authenticated && isProtectedRoute) {
     const absoluteURL = new URL(AUTH_ROUTE, request.url);
     return NextResponse.redirect(absoluteURL.toString());
   }
 
-  if (session && pathname === AUTH_ROUTE) {
+  if (authenticated && pathname === AUTH_ROUTE) {
     const absoluteURL = new URL('/', request.url);
     return NextResponse.redirect(absoluteURL.toString());
   }

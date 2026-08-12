@@ -1,46 +1,24 @@
-# Sticky Studio - Opportunity Management
+# Sticky Studio
 
-An application for managing scholarships, PhD positions, competitions. Its a single user app.
+A single-user opportunity manager for jobs, internships, contests, and higher-study positions. Submitted images, PDFs, or text are converted into a structured draft, optionally enriched from bounded same-site links, and shown for human review. Extraction never saves automatically.
 
-## Setup
+## Local setup
 
-### 1. Install Dependencies
+1. Install dependencies: `npm install`
+2. Copy `.env.example` to `.env` and configure it.
+3. Create the private source bucket: `npm run storage:setup`
+4. Apply versioned database migrations: `npm run db:migrate`
+5. Start the app: `npm run dev`
 
-```bash
-npm install
-```
+The development server runs at <http://localhost:9002>.
 
-### 2. Database Setup
+## Quality checks
 
-Create a PostgreSQL database and set up your environment variables:
+- `npm run lint`
+- `npm run typecheck`
+- `npm test`
+- `npm run build` runs all checks before compiling the production app.
 
-```bash
-# Copy the example environment file
-cp .env.example .env
+## Production deployment
 
-# Edit .env with your database credentials
-DATABASE_URL=postgresql://username:password@localhost:5432/sticky_studio
-APP_USER_EMAIL=admin@example.com
-APP_USER_PASSWORD=your_secure_password
-```
-
-### 3. Initialize Database
-
-```bash
-npm run setup-db
-```
-
-### 4. Start Development Server
-
-```bash
-npm run dev
-```
-
-The application will be available at `http://localhost:9002`.
-
-## Environment Variables
-
-- `DATABASE_URL`: PostgreSQL connection string
-- `APP_USER_EMAIL`: Admin email for authentication
-- `APP_USER_PASSWORD`: Admin password for authentication
-- `NODE_ENV`: Environment (development/production)
+Follow [DEPLOYMENT.md](./DEPLOYMENT.md). Database migrations are intentionally CLI-only: there is no public HTTP migration route and the app does not mutate its schema during startup.
