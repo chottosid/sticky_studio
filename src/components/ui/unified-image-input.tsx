@@ -63,7 +63,8 @@ export function UnifiedImageInput({
       file => file.type.startsWith('image/') || file.type === 'application/pdf'
     );
 
-    const totalSize = validFiles.reduce((total, file) => total + file.size, 0);
+    // ponytail: client-side cap only; server re-validates at 10MB
+    const totalSize = [...selectedFiles.map(f => f.size), ...validFiles.map(f => f.size)].reduce((total, size) => total + size, 0);
     if (totalSize > 10 * 1024 * 1024) {
       toast({
         variant: 'destructive',
@@ -91,8 +92,8 @@ export function UnifiedImageInput({
 
     const filesToProcess = multiple ? validFiles : [validFiles[0]];
     const processedFiles = await Promise.all(filesToProcess.map(processFile));
-    onFilesSelect(processedFiles);
-  }, [multiple, onFilesSelect, processFile, toast]);
+    onFilesSelect(multiple ? [...selectedFiles, ...processedFiles] : processedFiles);
+  }, [multiple, onFilesSelect, processFile, selectedFiles, toast]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -162,11 +163,14 @@ export function UnifiedImageInput({
     }
   };
 
-  // Handle paste event
-  const handleContainerPaste = React.useCallback((e: React.ClipboardEvent) => {
+  // Handle paste event (document-level so Ctrl+V works without focusing the drop zone)
+  const handlePaste = React.useCallback((e: ClipboardEvent) => {
     if (disabled) return;
+    // Don't hijack paste aimed at an editable field (e.g. the Paste-text tab)
+    const target = e.target as HTMLElement | null;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
 
-    const items = Array.from(e.clipboardData.items);
+    const items = Array.from(e.clipboardData?.items || []);
     const imageItems = items.filter(item => item.type.startsWith('image/'));
 
     if (imageItems.length > 0) {
@@ -184,6 +188,11 @@ export function UnifiedImageInput({
       }
     }
   }, [disabled, processFiles, toast]);
+
+  React.useEffect(() => {
+    document.addEventListener('paste', handlePaste);
+    return () => document.removeEventListener('paste', handlePaste);
+  }, [handlePaste]);
 
   const handleManualPaste = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -256,7 +265,6 @@ export function UnifiedImageInput({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onPaste={handleContainerPaste}
         tabIndex={0}
         onClick={handleUploadClick}
       >
@@ -267,6 +275,18 @@ export function UnifiedImageInput({
               <div className="flex-1">
                 <p className="font-medium">{selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected</p>
               </div>
+              {multiple && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleManualPaste}
+                  disabled={disabled}
+                  className="flex items-center gap-2 h-8 px-3"
+                >
+                  <ClipboardPaste className="h-4 w-4" />
+                  Paste
+                </Button>
+              )}
               {selectedFiles.length === 1 && (
                 <Button
                   variant="ghost"
