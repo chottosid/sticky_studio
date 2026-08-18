@@ -39,40 +39,55 @@ export function UnifiedImageInput({
   const { toast } = useToast();
 
   const processFile = React.useCallback((file: File): Promise<FileData> => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUri = event.target?.result as string;
-        const fileType: 'image' | 'pdf' = file.type.startsWith('image/') ? 'image' : 'pdf';
+    // ponytail: Vercel caps server-action bodies at 4.5MB and base64 adds ~33%,
+    // so images over ~3MB must be downscaled before upload. JPEG at quality 0.85
+    // keeps OCR-grade quality at a fraction of the size.
+    async function compressImage(file: File): Promise<File | null> {
+      if (!file.type.startsWith('image/') || file.type === 'image/gif') return null;
+      try {
+        const bitmap = await createImageBitmap(file);
+        const maxDim = 2000;
+        const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+        if (scale === 1 && file.size < 1_500_000) return null; // already small enough
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(bitmap.width * scale);
+        canvas.height = Math.round(bitmap.height * scale);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        bitmap.close();
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+        if (!blob || blob.size >= file.size) return null; // never grow the file
+        return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+      } catch {
+        return null; // exotic format: send as-is
+      }
+    }
 
-        resolve({
-          id: crypto.randomUUID(),
-          name: file.name,
-          dataUri,
-          type: fileType,
-          mimeType: file.type,
-          size: file.size,
-        });
+    return (async () => {
+      const finalFile = (await compressImage(file)) ?? file;
+      const dataUri: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => resolve(event.target?.result as string);
+        reader.onerror = () => reject(new Error('Could not read the file.'));
+        reader.readAsDataURL(finalFile);
+      });
+      const fileType: 'image' | 'pdf' = finalFile.type.startsWith('image/') ? 'image' : 'pdf';
+      return {
+        id: crypto.randomUUID(),
+        name: finalFile.name,
+        dataUri,
+        type: fileType,
+        mimeType: finalFile.type,
+        size: finalFile.size,
       };
-      reader.readAsDataURL(file);
-    });
+    })();
   }, []);
 
   const processFiles = React.useCallback(async (files: File[]) => {
     const validFiles = files.filter(
       file => file.type.startsWith('image/') || file.type === 'application/pdf'
     );
-
-    // ponytail: client-side cap only; server re-validates at 10MB
-    const totalSize = [...selectedFiles.map(f => f.size), ...validFiles.map(f => f.size)].reduce((total, size) => total + size, 0);
-    if (totalSize > 10 * 1024 * 1024) {
-      toast({
-        variant: 'destructive',
-        title: 'Files Too Large',
-        description: 'The combined file size must be 10 MB or less.',
-      });
-      return;
-    }
 
     if (validFiles.length === 0) {
       toast({
@@ -91,7 +106,21 @@ export function UnifiedImageInput({
     }
 
     const filesToProcess = multiple ? validFiles : [validFiles[0]];
+    // Compress first: a 5MB screenshot may shrink to ~300KB, so cap after.
     const processedFiles = await Promise.all(filesToProcess.map(processFile));
+
+    // ponytail: Vercel hard-caps server-action request bodies at 4.5MB;
+    // base64 inflates ~33%, so cap combined post-compression bytes at 3MB.
+    const totalSize = [...selectedFiles, ...processedFiles].reduce((total, f) => total + f.size, 0);
+    if (totalSize > 3 * 1024 * 1024) {
+      toast({
+        variant: 'destructive',
+        title: 'Files Too Large',
+        description: 'The combined file size must be 3 MB or less (images are compressed automatically). PDFs count toward the limit at full size.',
+      });
+      return;
+    }
+
     onFilesSelect(multiple ? [...selectedFiles, ...processedFiles] : processedFiles);
   }, [multiple, onFilesSelect, processFile, selectedFiles, toast]);
 
