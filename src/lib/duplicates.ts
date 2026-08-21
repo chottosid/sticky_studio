@@ -10,7 +10,13 @@ import { classifyDuplicateCandidates, type DuplicateClassificationCandidate } fr
 import { query } from './db';
 import { canonicalizeUrl, extractUrls, normalizeComparable } from './duplicate-normalization';
 import { sourceContentSha256 } from './source-payload';
-import type { DuplicateInput } from './duplicate-confirmation';
+
+/** Duplicate detection runs per opportunity; the confirmation token covers the whole batch. */
+type SingleDuplicateInput = {
+  opportunity: OpportunityInput;
+  sources: ExtractionSource[];
+  discoveredSourceUrls: string[];
+};
 
 export {
   createDuplicateConfirmationToken,
@@ -50,7 +56,7 @@ function parseJson(value: unknown, fallback: unknown) {
   try { return JSON.parse(value); } catch { return fallback; }
 }
 
-function currentSignals(input: DuplicateInput) {
+function currentSignals(input: SingleDuplicateInput) {
   const sourceHashes = input.sources.map(sourceContentSha256);
   const sourceText = input.sources
     .filter((source): source is Extract<ExtractionSource, { kind: 'text' }> => source.kind === 'text')
@@ -80,7 +86,7 @@ function currentSignals(input: DuplicateInput) {
   };
 }
 
-async function candidateRows(input: DuplicateInput, signals: ReturnType<typeof currentSignals>): Promise<CandidateRow[]> {
+async function candidateRows(input: SingleDuplicateInput, signals: ReturnType<typeof currentSignals>): Promise<CandidateRow[]> {
   const result = await query<CandidateRow>(
     `SELECT
       o.id, o.name, o.details, o.deadline, o.category, o.organization_name,
@@ -162,7 +168,7 @@ function rowOpportunity(row: CandidateRow): OpportunityInput {
 }
 
 function rankCandidates(
-  input: DuplicateInput,
+  input: SingleDuplicateInput,
   signals: ReturnType<typeof currentSignals>,
   rows: CandidateRow[],
 ): RankedCandidate[] {
@@ -232,7 +238,7 @@ function rankCandidates(
     .slice(0, MAX_CLASSIFICATION_CANDIDATES);
 }
 
-export async function findDuplicateMatches(input: DuplicateInput): Promise<DuplicateMatch[]> {
+export async function findDuplicateMatches(input: SingleDuplicateInput): Promise<DuplicateMatch[]> {
   const signals = currentSignals(input);
   const ranked = rankCandidates(input, signals, await candidateRows(input, signals));
   if (!ranked.length) return [];

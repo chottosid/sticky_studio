@@ -104,10 +104,14 @@ export const EvidenceSchema = z.object({
   confidence: z.enum(['high', 'medium', 'low']).default('medium'),
 });
 
-export const ExtractionDraftSchema = z.object({
+export const ExtractionDraftItemSchema = z.object({
   opportunity: OpportunityDraftValueSchema,
   evidence: z.array(EvidenceSchema).max(100).default([]),
   unresolvedFields: z.array(z.string().trim().min(1).max(200)).max(100).default([]),
+});
+
+export const ExtractionDraftSchema = z.object({
+  opportunities: z.array(ExtractionDraftItemSchema).min(1).max(10),
   warnings: z.array(z.string().trim().min(1).max(1_000)).max(50).default([]),
   discoveredSourceUrls: z.array(z.string().url().max(2_000)).max(20).default([]),
 });
@@ -141,6 +145,8 @@ export const DuplicateMatchSchema = z.object({
   deadline: z.string().nullable(),
   confidence: z.enum(['high', 'medium', 'low']),
   reason: z.string().max(500),
+  /** Name of the draft item this match was found for. */
+  draftName: z.string().max(500).optional(),
 });
 
 export const SaveSourceSchema = ExtractionSourceSchema;
@@ -152,6 +158,7 @@ export type EmploymentAttributes = z.infer<typeof EmploymentAttributesSchema>;
 export type HigherStudyAttributes = z.infer<typeof HigherStudyAttributesSchema>;
 export type ContestAttributes = z.infer<typeof ContestAttributesSchema>;
 export type ExtractionDraft = z.infer<typeof ExtractionDraftSchema>;
+export type ExtractionDraftItem = z.infer<typeof ExtractionDraftItemSchema>;
 export type ExtractionSource = z.infer<typeof ExtractionSourceSchema>;
 export type Evidence = z.infer<typeof EvidenceSchema>;
 export type DuplicateMatch = z.infer<typeof DuplicateMatchSchema>;

@@ -4,7 +4,7 @@ import {
   ExtractionDraftSchema,
   type ExtractionDraft,
 } from '@/domain/opportunity/schema';
-import { normalizeOpportunity, type RawExtraction } from './contracts';
+import { normalizeOpportunity, type RawExtraction, type RawOpportunity } from './contracts';
 import {
   prepareExtractionSources,
   urlsFromPreparedSources,
@@ -26,9 +26,11 @@ function todayInAppTimezone(): string {
 }
 
 function extractionPrompt(stage: 'initial' | 'enriched'): string {
-  return `Extract one opportunity from all supplied sources.
+  return `Extract every distinct opportunity from all supplied sources.
 
 Today is ${todayInAppTimezone()}.
+- One entry per distinct opening, program, or contest; merge reposts of the same one. At most 10.
+- When one post lists several openings, give each its own entry named "Role at Organization".
 - Use null or [] when a fact is not supported. Never infer names or links.
 - Resolve relative dates to YYYY-MM-DD; otherwise deadline must be null.
 - category must be job, internship, contest, or higher-study.
@@ -57,7 +59,7 @@ function normalizeUrls(values: string[]): string[] {
   return Array.from(new Set(urls)).slice(0, 20);
 }
 
-function relevantUnresolvedFields(raw: RawExtraction): string[] {
+function relevantUnresolvedFields(raw: RawOpportunity): string[] {
   const opportunity = normalizeOpportunity(raw);
   const fields: string[] = [];
   const add = (field: string, value: unknown) => {
@@ -98,13 +100,13 @@ function relevantUnresolvedFields(raw: RawExtraction): string[] {
 
 function toDraft(raw: RawExtraction, sources: PreparedSource[], extraWarnings: string[]): ExtractionDraft {
   const sourceIds = new Set(sources.map((source) => source.id));
-  const opportunity = normalizeOpportunity(raw);
-  const computedUnresolved = relevantUnresolvedFields(raw);
 
   return ExtractionDraftSchema.parse({
-    opportunity,
-    evidence: raw.evidence.filter((entry) => sourceIds.has(entry.sourceId)),
-    unresolvedFields: Array.from(new Set([...raw.unresolvedFields, ...computedUnresolved])),
+    opportunities: raw.opportunities.map((item) => ({
+      opportunity: normalizeOpportunity(item),
+      evidence: item.evidence.filter((entry) => sourceIds.has(entry.sourceId)),
+      unresolvedFields: Array.from(new Set([...item.unresolvedFields, ...relevantUnresolvedFields(item)])),
+    })),
     warnings: Array.from(new Set([...raw.warnings, ...extraWarnings])),
     discoveredSourceUrls: normalizeUrls([
       ...raw.discoveredSourceUrls,
@@ -119,10 +121,10 @@ export async function extractOpportunityDetails(input: unknown): Promise<Extract
   const seedUrls = normalizeUrls([
     ...urlsFromPreparedSources(preparedSources),
     ...initial.discoveredSourceUrls,
-    ...(initial.opportunity.applicationUrl ? [initial.opportunity.applicationUrl] : []),
+    ...initial.opportunities.flatMap((item) => item.applicationUrl ? [item.applicationUrl] : []),
   ]);
 
-  if (relevantUnresolvedFields(initial).length === 0 || seedUrls.length === 0) {
+  if (initial.opportunities.every((item) => relevantUnresolvedFields(item).length === 0) || seedUrls.length === 0) {
     return toDraft(initial, preparedSources, []);
   }
 

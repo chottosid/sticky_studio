@@ -6,7 +6,7 @@ import { sourceContentSha256 } from './source-payload';
 const CONFIRMATION_SECONDS = 10 * 60;
 
 export type DuplicateInput = {
-  opportunity: OpportunityInput;
+  opportunities: OpportunityInput[];
   sources: ExtractionSource[];
   discoveredSourceUrls: string[];
 };
@@ -15,11 +15,11 @@ function duplicateFingerprint(input: DuplicateInput): string {
   const sourceHashes = input.sources.map(sourceContentSha256).sort();
   const urls = Array.from(new Set([
     ...input.discoveredSourceUrls,
-    ...(input.opportunity.applicationUrl ? [input.opportunity.applicationUrl] : []),
+    ...input.opportunities.flatMap((opportunity) => opportunity.applicationUrl ? [opportunity.applicationUrl] : []),
     ...input.sources.flatMap((source) => source.kind === 'text' ? extractUrls(source.text) : []),
   ].map(canonicalizeUrl).filter((url): url is string => Boolean(url)))).sort();
   return createHash('sha256').update(JSON.stringify({
-    opportunity: input.opportunity,
+    opportunities: input.opportunities,
     sourceHashes,
     urls,
   })).digest('hex');

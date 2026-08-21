@@ -46,10 +46,9 @@ describe('OpportunityInputSchema', () => {
 describe('ExtractionDraftSchema', () => {
   it('allows a nameless extraction draft for human review', () => {
     const draft = ExtractionDraftSchema.parse({
-      opportunity: { name: '', category: 'contest', attributes: {} },
-      unresolvedFields: ['name'],
+      opportunities: [{ opportunity: { name: '', category: 'contest', attributes: {} }, unresolvedFields: ['name'] }],
     });
-    expect(draft.opportunity.name).toBe('');
-    expect(draft.unresolvedFields).toContain('name');
+    expect(draft.opportunities[0].opportunity.name).toBe('');
+    expect(draft.opportunities[0].unresolvedFields).toContain('name');
   });
 });

@@ -18,7 +18,7 @@ const opportunity: OpportunityInput = {
 
 function input(value = opportunity): DuplicateInput {
   return {
-    opportunity: value,
+    opportunities: [value],
     sources: [{ id: 'source-1', kind: 'text', name: 'Pasted text', mimeType: 'text/plain', text: 'Hiring Ph.D. students' }],
     discoveredSourceUrls: [],
   };
@@ -41,5 +41,11 @@ describe('duplicate confirmation', () => {
   it('rejects a tampered token', async () => {
     const token = await createDuplicateConfirmationToken(input(), []);
     expect(await verifyDuplicateConfirmationToken(input(), `${token}x`)).toBe(false);
+  });
+
+  it('rejects a batch token when the opportunity list changes', async () => {
+    const token = await createDuplicateConfirmationToken(input(), []);
+    const second = { ...opportunity, name: 'Postdoc opening' };
+    expect(await verifyDuplicateConfirmationToken({ ...input(), opportunities: [opportunity, second] }, token)).toBe(false);
   });
 });

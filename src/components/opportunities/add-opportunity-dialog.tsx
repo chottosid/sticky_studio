@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { ExternalLink, Loader2, PlusCircle, Save } from 'lucide-react';
 import { OpportunityInputSchema, type ExtractionSource } from '@/domain/opportunity/schema';
-import type { DuplicateMatch, ExtractionDraft, OpportunityDraftValue } from '@/lib/types';
+import type { DuplicateMatch, ExtractionDraft, OpportunityDraftValue, OpportunityInput } from '@/lib/types';
 import { addOpportunity } from '@/lib/actions';
 import { extractOpportunityDraft } from '@/lib/extraction-actions';
 import { Button } from '@/components/ui/button';
@@ -36,7 +36,8 @@ export function AddOpportunityDialog() {
   const [files, setFiles] = React.useState<FileData[]>([]);
   const [text, setText] = React.useState('');
   const [draft, setDraft] = React.useState<ExtractionDraft | null>(null);
-  const [opportunity, setOpportunity] = React.useState<OpportunityDraftValue>(emptyOpportunity());
+  const [items, setItems] = React.useState<OpportunityDraftValue[]>([emptyOpportunity()]);
+  const [activeIndex, setActiveIndex] = React.useState(0);
   const [sources, setSources] = React.useState<ExtractionSource[]>([]);
   const [isExtracting, setIsExtracting] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
@@ -49,7 +50,8 @@ export function AddOpportunityDialog() {
     setFiles([]);
     setText('');
     setDraft(null);
-    setOpportunity(emptyOpportunity());
+    setItems([emptyOpportunity()]);
+    setActiveIndex(0);
     setSources([]);
     setIsExtracting(false);
     setIsSaving(false);
@@ -86,7 +88,8 @@ export function AddOpportunityDialog() {
       if (!result.success) throw new Error(result.message);
       setSources(nextSources);
       setDraft(result.draft);
-      setOpportunity(result.draft.opportunity);
+      setItems(result.draft.opportunities.map((item) => item.opportunity));
+      setActiveIndex(0);
       setStep('review');
     } catch (error) {
       toast({
@@ -100,20 +103,25 @@ export function AddOpportunityDialog() {
   };
 
   const handleSave = async (duplicateConfirmationToken?: string) => {
-    const parsed = OpportunityInputSchema.safeParse(opportunity);
-    if (!parsed.success) {
-      toast({
-        variant: 'destructive',
-        title: 'Review required',
-        description: parsed.error.issues[0]?.message || 'Please check the opportunity fields.',
-      });
-      return;
+    const parsedItems: OpportunityInput[] = [];
+    for (const [index, item] of items.entries()) {
+      const parsed = OpportunityInputSchema.safeParse(item);
+      if (!parsed.success) {
+        setActiveIndex(index);
+        toast({
+          variant: 'destructive',
+          title: 'Review required',
+          description: parsed.error.issues[0]?.message || 'Please check the opportunity fields.',
+        });
+        return;
+      }
+      parsedItems.push(parsed.data);
     }
 
     setIsSaving(true);
     try {
       const result = await addOpportunity({
-        opportunity: parsed.data,
+        opportunities: parsedItems,
         sources,
         discoveredSourceUrls: draft?.discoveredSourceUrls || [],
         duplicateConfirmationToken,
@@ -188,17 +196,38 @@ export function AddOpportunityDialog() {
                 <ul className="mt-1 list-disc pl-5">{draft.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
               </div>
             ) : null}
+            {items.length > 1 ? (
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">
+                  {items.length} opportunities were extracted. Review each one — all are saved together.
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {items.map((item, index) => (
+                    <Button
+                      key={index}
+                      type="button"
+                      variant={index === activeIndex ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-7 max-w-56 truncate"
+                      onClick={() => setActiveIndex(index)}
+                    >
+                      {index + 1}. {item.name || 'Unnamed'}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <OpportunityFormFields
-              value={opportunity}
-              onChange={setOpportunity}
-              evidence={draft?.evidence}
-              unresolvedFields={draft?.unresolvedFields}
+              value={items[activeIndex]}
+              onChange={(value) => setItems(items.map((item, index) => (index === activeIndex ? value : item)))}
+              evidence={draft?.opportunities[activeIndex]?.evidence}
+              unresolvedFields={draft?.opportunities[activeIndex]?.unresolvedFields}
             />
             <DialogFooter>
               <Button variant="ghost" onClick={() => setStep('input')} disabled={isSaving}>Back</Button>
               <Button onClick={() => void handleSave()} disabled={isSaving}>
                 {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                {isSaving ? 'Saving…' : 'Save Opportunity'}
+                {isSaving ? 'Saving…' : items.length > 1 ? `Save ${items.length} Opportunities` : 'Save Opportunity'}
               </Button>
             </DialogFooter>
           </>
@@ -238,6 +267,9 @@ export function AddOpportunityDialog() {
                   <Badge variant="outline">{match.category}</Badge>
                 </div>
                 <p className="mt-2 text-sm">{match.reason}</p>
+                {match.draftName ? (
+                  <p className="mt-1 text-xs text-muted-foreground">Matches the draft being saved: {match.draftName}</p>
+                ) : null}
               </div>
             ))}
           </div>

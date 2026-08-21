@@ -68,7 +68,7 @@ export async function logout() {
 }
 
 const SaveOpportunityRequestSchema = z.object({
-  opportunity: OpportunityInputSchema,
+  opportunities: z.array(OpportunityInputSchema).min(1).max(10),
   sources: z.array(ExtractionSourceSchema).min(1).max(5),
   discoveredSourceUrls: z.array(z.string().url().max(2_000)).max(20).default([]),
   duplicateConfirmationToken: z.string().max(5_000).optional(),
@@ -85,19 +85,21 @@ export async function addOpportunity(input: unknown) {
     };
   }
 
+  const { opportunities, sources, discoveredSourceUrls } = parsed.data;
+  const duplicateInput = { opportunities, sources, discoveredSourceUrls };
   let uploadedSources: Awaited<ReturnType<typeof uploadOpportunitySources>> = [];
+  let savedCount = 0;
   try {
-    const duplicateInput = {
-      opportunity: parsed.data.opportunity,
-      sources: parsed.data.sources,
-      discoveredSourceUrls: parsed.data.discoveredSourceUrls,
-    };
     const confirmed = await verifyDuplicateConfirmationToken(
       duplicateInput,
       parsed.data.duplicateConfirmationToken,
     );
     if (!confirmed) {
-      const duplicateMatches = await findDuplicateMatches(duplicateInput);
+      const duplicateMatches = [];
+      for (const opportunity of opportunities) {
+        const matches = await findDuplicateMatches({ opportunity, sources, discoveredSourceUrls });
+        duplicateMatches.push(...matches.map((match) => ({ ...match, draftName: opportunity.name })));
+      }
       if (duplicateMatches.length) {
         return {
           success: false as const,
@@ -109,23 +111,33 @@ export async function addOpportunity(input: unknown) {
       }
     }
 
-    uploadedSources = await uploadOpportunitySources(parsed.data.sources);
-    const opportunity = await saveOpportunity(
-      parsed.data.opportunity,
-      uploadedSources,
-      Array.from(new Set(parsed.data.discoveredSourceUrls)),
-    );
-    await sendNewOpportunityEmail(opportunity);
-    revalidatePath('/');
-    return { success: true as const, message: `Successfully added "${opportunity.name}"!`, opportunity };
-  } catch (error) {
-    if (uploadedSources.length) {
-      await removeStoredSources(uploadedSources.map((source) => source.storagePath));
+    for (const opportunity of opportunities) {
+      uploadedSources = await uploadOpportunitySources(sources);
+      try {
+        const saved = await saveOpportunity(
+          opportunity,
+          uploadedSources,
+          Array.from(new Set(discoveredSourceUrls)),
+        );
+        savedCount += 1;
+        await sendNewOpportunityEmail(saved);
+      } catch (error) {
+        await removeStoredSources(uploadedSources.map((source) => source.storagePath));
+        throw error;
+      }
     }
+    revalidatePath('/');
+    return {
+      success: true as const,
+      message: savedCount === 1
+        ? `Successfully added "${opportunities[0].name}"!`
+        : `Successfully added ${savedCount} opportunities!`,
+    };
+  } catch (error) {
     console.error('Could not save opportunity:', error);
     return {
       success: false as const,
-      message: error instanceof Error ? error.message : 'Failed to save the opportunity.',
+      message: `${savedCount ? `Saved ${savedCount} before the failure. ` : ''}${error instanceof Error ? error.message : 'Failed to save the opportunity.'}`,
     };
   }
 }
