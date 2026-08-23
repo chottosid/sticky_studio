@@ -43,14 +43,15 @@ function openRouterContent(sources: PreparedSource[], prompt: string) {
   return content;
 }
 
-async function callOpenRouterRaw(
+async function openRouterCompletion(
+  model: string,
   userContent: string | Array<Record<string, unknown>>,
   request: Omit<StructuredRequest<unknown>, 'schema'>,
-): Promise<string> {
+): Promise<Response> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error('OPENROUTER_API_KEY is not configured.');
 
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  return fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -58,7 +59,7 @@ async function callOpenRouterRaw(
       'HTTP-Referer': process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002',
     },
     body: JSON.stringify({
-      model: process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL,
+      model,
       messages: [
         { role: 'system', content: request.systemInstruction },
         { role: 'user', content: userContent },
@@ -75,6 +76,20 @@ async function callOpenRouterRaw(
     }),
     signal: AbortSignal.timeout(45_000),
   });
+}
+
+async function callOpenRouterRaw(
+  userContent: string | Array<Record<string, unknown>>,
+  request: Omit<StructuredRequest<unknown>, 'schema'>,
+): Promise<string> {
+  const configuredModel = process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL;
+  let response = await openRouterCompletion(configuredModel, userContent, request);
+
+  // Configured models can be retired upstream (e.g. stealth models removed from
+  // OpenRouter); fall back to the default instead of failing the request.
+  if (response.status === 404 && configuredModel !== DEFAULT_OPENROUTER_MODEL) {
+    response = await openRouterCompletion(DEFAULT_OPENROUTER_MODEL, userContent, request);
+  }
 
   if (!response.ok) {
     const errorText = (await response.text()).slice(0, 500);

@@ -79,10 +79,11 @@ export const rawExtractionJsonSchema = {
   additionalProperties: false,
   required: ['opportunities', 'discoveredSourceUrls', 'warnings'],
   properties: {
+    // ponytail: no minItems/maxItems — Gemini's responseJsonSchema rejects the full
+    // schema with 400 INVALID_ARGUMENT when they're present; RawExtractionSchema
+    // enforces the 1-10 bound at parse time instead.
     opportunities: {
       type: 'array',
-      minItems: 1,
-      maxItems: 10,
       items: {
         type: 'object',
         additionalProperties: false,
