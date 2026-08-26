@@ -217,6 +217,51 @@ function normalizeBase(opportunity: z.infer<typeof RawOpportunitySchema>) {
   };
 }
 
+const TITLE_STOP_WORDS = new Set(['the', 'a', 'an', 'of', 'in', 'at', 'for', 'and', 'to', 'with', 'new']);
+
+function titleTokens(value: string | null): Set<string> {
+  if (!value) return new Set();
+  return new Set(value.toLowerCase().split(/[^a-z0-9]+/)
+    .filter((word) => word.length > 2 && !TITLE_STOP_WORDS.has(word)));
+}
+
+/**
+ * Enrichment pages exist to complete details of the openings the user submitted;
+ * they must never add openings. Keeps enriched entries that match a submitted
+ * opening, recovers submitted openings the enriched pass dropped, and reports
+ * how many fetched-page-only openings were ignored.
+ */
+// ponytail: token-overlap heuristic — an opening with no title token shared with
+// any submitted opening is treated as new and dropped; the review UI catches
+// rare wrong calls. Swap for a similarity threshold if misses ever matter.
+export function mergeEnrichedOpportunities(
+  initial: RawOpportunity[],
+  enriched: RawOpportunity[],
+): { opportunities: RawOpportunity[]; droppedNewOpenings: number } {
+  const titleOf = (opportunity: RawOpportunity) =>
+    opportunity.category === 'contest' ? opportunity.attributes.theme
+      : opportunity.category === 'higher-study' ? opportunity.attributes.programName
+        : opportunity.attributes.roleTitle;
+
+  const matches = (a: RawOpportunity, b: RawOpportunity) => {
+    if (a.category !== b.category) return false;
+    const left = titleTokens(titleOf(a));
+    const right = titleTokens(titleOf(b));
+    if (!left.size || !right.size) return true; // no title to judge by: keep, human reviews
+    for (const token of left) if (right.has(token)) return true;
+    return false;
+  };
+
+  const keptEnriched = enriched.filter((candidate) => initial.some((opening) => matches(opening, candidate)));
+  return {
+    opportunities: [
+      ...keptEnriched,
+      ...initial.filter((opening) => !enriched.some((candidate) => matches(opening, candidate))),
+    ],
+    droppedNewOpenings: enriched.length - keptEnriched.length,
+  };
+}
+
 export function normalizeOpportunity(opportunity: z.infer<typeof RawOpportunitySchema>): OpportunityDraftValue {
   const base = normalizeBase(opportunity);
   const attributes = opportunity.attributes;

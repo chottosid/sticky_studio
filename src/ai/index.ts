@@ -4,7 +4,13 @@ import {
   ExtractionDraftSchema,
   type ExtractionDraft,
 } from '@/domain/opportunity/schema';
-import { clampModelValue, normalizeOpportunity, type RawExtraction, type RawOpportunity } from './contracts';
+import {
+  clampModelValue,
+  mergeEnrichedOpportunities,
+  normalizeOpportunity,
+  type RawExtraction,
+  type RawOpportunity,
+} from './contracts';
 import {
   prepareExtractionSources,
   urlsFromPreparedSources,
@@ -41,7 +47,7 @@ Today is ${todayInAppTimezone()}.
 - Cite exact source IDs. Keep excerpts short.
 - List useful HTTP(S) links present in sources under discoveredSourceUrls.
 - Mark relevant missing fields in unresolvedFields.
-${stage === 'enriched' ? '- Prefer facts from the originally submitted sources when sources conflict; add a warning for unresolved conflicts.' : ''}`;
+${stage === 'enriched' ? '- The fetched pages exist only to complete details of the openings from the originally submitted sources; never add an opening that appears only in a fetched page. Prefer facts from the originally submitted sources when sources conflict; add a warning for unresolved conflicts.' : ''}`;
 }
 
 function normalizeUrls(values: string[]): string[] {
@@ -140,7 +146,18 @@ export async function extractOpportunityDetails(input: unknown): Promise<Extract
   const allSources = [...preparedSources, ...enrichment.sources];
   try {
     const enriched = await extractWithProvider(allSources, extractionPrompt('enriched'));
-    return toDraft(enriched, allSources, enrichment.warnings);
+    // Enrichment completes the submitted openings; it must never add new ones
+    // (e.g. admissions or other roles found on a linked careers page).
+    const { opportunities, droppedNewOpenings } = mergeEnrichedOpportunities(
+      initial.opportunities,
+      enriched.opportunities,
+    );
+    return toDraft({ ...enriched, opportunities }, allSources, [
+      ...enrichment.warnings,
+      ...(droppedNewOpenings > 0
+        ? [`${droppedNewOpenings} opening(s) found only on fetched pages were ignored.`]
+        : []),
+    ]);
   } catch (error) {
     return toDraft(initial, preparedSources, [
       ...enrichment.warnings,

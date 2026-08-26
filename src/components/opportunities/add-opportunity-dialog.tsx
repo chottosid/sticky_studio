@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { ExternalLink, Loader2, PlusCircle, Save } from 'lucide-react';
+import { ExternalLink, Loader2, PlusCircle, Save, X } from 'lucide-react';
 import { OpportunityInputSchema, type ExtractionSource } from '@/domain/opportunity/schema';
 import type { DuplicateMatch, ExtractionDraft, OpportunityDraftValue, OpportunityInput } from '@/lib/types';
 import { addOpportunity } from '@/lib/actions';
@@ -102,6 +102,15 @@ export function AddOpportunityDialog() {
     }
   };
 
+  const removeItem = (index: number) => {
+    if (!draft || items.length <= 1 || isSaving) return;
+    const next = items.filter((_, itemIndex) => itemIndex !== index);
+    setItems(next);
+    // Keep draft entries aligned with items so evidence/unresolved fields stay on the right one.
+    setDraft({ ...draft, opportunities: draft.opportunities.filter((_, itemIndex) => itemIndex !== index) });
+    setActiveIndex((active) => Math.min(active > index ? active - 1 : active, next.length - 1));
+  };
+
   const handleSave = async (duplicateConfirmationToken?: string) => {
     const parsedItems: OpportunityInput[] = [];
     for (const [index, item] of items.entries()) {
@@ -199,20 +208,34 @@ export function AddOpportunityDialog() {
             {items.length > 1 ? (
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">
-                  {items.length} opportunities were extracted. Review each one — all are saved together.
+                  {items.length} opportunities were extracted. Review each one and remove any you
+                  do not want — the rest are saved together.
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {items.map((item, index) => (
-                    <Button
-                      key={index}
-                      type="button"
-                      variant={index === activeIndex ? 'default' : 'outline'}
-                      size="sm"
-                      className="h-7 max-w-56 truncate"
-                      onClick={() => setActiveIndex(index)}
-                    >
-                      {index + 1}. {item.name || 'Unnamed'}
-                    </Button>
+                    <div key={index} className="flex items-center">
+                      <Button
+                        type="button"
+                        variant={index === activeIndex ? 'default' : 'outline'}
+                        size="sm"
+                        className="h-7 max-w-56 truncate rounded-r-none"
+                        onClick={() => setActiveIndex(index)}
+                      >
+                        {index + 1}. {item.name || 'Unnamed'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={index === activeIndex ? 'default' : 'outline'}
+                        size="sm"
+                        className="h-7 w-7 shrink-0 justify-center p-0 rounded-l-none border-l-0"
+                        onClick={() => removeItem(index)}
+                        disabled={isSaving}
+                        aria-label={`Remove ${item.name || 'opportunity'} from this save`}
+                        title="Don't save this one"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
                   ))}
                 </div>
               </div>

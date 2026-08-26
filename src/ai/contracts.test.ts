@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { ExtractionDraftSchema } from '@/domain/opportunity/schema';
-import { clampModelValue, normalizeOpportunity, RawExtractionSchema, type RawExtraction } from './contracts';
+import {
+  clampModelValue,
+  mergeEnrichedOpportunities,
+  normalizeOpportunity,
+  RawExtractionSchema,
+  type RawExtraction,
+} from './contracts';
 
 const baseItem = {
   name: 'Research opening', details: 'Funded position', deadline: null, category: 'higher-study',
@@ -76,6 +82,44 @@ describe('LLM output normalization', () => {
     expect(draft.opportunities[0].unresolvedFields[0]).toHaveLength(200);
     expect(draft.warnings).toHaveLength(1);
     expect(draft.warnings[0]).toHaveLength(1_000);
+  });
+});
+
+describe('enrichment merge guard', () => {
+  const lecturer = {
+    ...baseItem, category: 'job' as const,
+    attributes: { ...baseItem.attributes, roleTitle: 'Lecturer' },
+  };
+
+  it('drops openings that appear only on fetched enrichment pages', () => {
+    const initial = RawExtractionSchema.parse({ ...baseRaw, opportunities: [lecturer] });
+    const enriched = RawExtractionSchema.parse({
+      ...baseRaw,
+      opportunities: [
+        { ...lecturer, name: 'Lecturer - CSE (Contractual) at Uttara University' },
+        // Phantom: an admissions page opening, not in the submitted post.
+        baseItem,
+      ],
+    });
+
+    const merged = mergeEnrichedOpportunities(initial.opportunities, enriched.opportunities);
+    expect(merged.opportunities).toHaveLength(1);
+    expect(merged.opportunities[0].name).toBe('Lecturer - CSE (Contractual) at Uttara University');
+    expect(merged.droppedNewOpenings).toBe(1);
+  });
+
+  it('recovers a submitted opening that the enriched pass dropped', () => {
+    const technician = { ...lecturer, name: 'Lab Technician', attributes: { ...lecturer.attributes, roleTitle: 'Lab Technician' } };
+    const initial = RawExtractionSchema.parse({ ...baseRaw, opportunities: [lecturer, technician] });
+    const enriched = RawExtractionSchema.parse({
+      ...baseRaw,
+      opportunities: [{ ...lecturer, name: 'Lecturer (updated)' }],
+    });
+
+    const merged = mergeEnrichedOpportunities(initial.opportunities, enriched.opportunities);
+    expect(merged.opportunities.map((opportunity) => opportunity.attributes.roleTitle).sort())
+      .toEqual(['Lab Technician', 'Lecturer']);
+    expect(merged.droppedNewOpenings).toBe(0);
   });
 });
 
