@@ -247,10 +247,22 @@ export async function deleteOpportunity(id: string): Promise<{ deleted: boolean;
       [id],
     );
     const result = await client.query('DELETE FROM opportunities WHERE id = $1 RETURNING id', [id]);
+    // Sources can be shared (content-addressed uploads): after this row's
+    // sources cascade away, only remove objects no other opportunity references.
+    const candidatePaths = sourceResult.rows.map((row) => String(row.storage_path));
+    let storagePaths: string[] = candidatePaths;
+    if (candidatePaths.length) {
+      const remaining = await client.query(
+        'SELECT DISTINCT storage_path FROM opportunity_sources WHERE storage_path = ANY($1)',
+        [candidatePaths],
+      );
+      const stillReferenced = new Set(remaining.rows.map((row) => String(row.storage_path)));
+      storagePaths = candidatePaths.filter((path) => !stillReferenced.has(path));
+    }
     await client.query('COMMIT');
     return {
       deleted: Boolean(result.rowCount),
-      storagePaths: sourceResult.rows.map((row) => String(row.storage_path)),
+      storagePaths,
     };
   } catch (error) {
     await client.query('ROLLBACK');

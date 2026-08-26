@@ -31,11 +31,14 @@ export async function GET(request: Request) {
             const targetDate = addDays(today, config.days);
             const dateString = format(targetDate, 'yyyy-MM-dd');
 
-            // Get opportunities that are due AND haven't had this reminder sent yet
+            // Catch-up window instead of an exact date match: if the cron skips a
+            // day or an email send fails, the reminder still goes out on the next
+            // run. The reminder_X_sent flag keeps it once-only.
             const result = await query<{ id: number; name: string; details: string; deadline: string }>(`
                 SELECT id, name, details, deadline
                 FROM opportunities
-                WHERE deadline = $1
+                WHERE deadline <= $1
+                AND deadline >= CURRENT_DATE
                 AND COALESCE(${config.column}, false) = false
             `, [dateString]);
 

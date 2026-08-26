@@ -10,12 +10,13 @@ export type DuplicateClassificationCandidate = {
 };
 
 const DuplicateDecisionsSchema = z.object({
+  // Clamp, don't reject: one over-long reason must not fail the whole batch.
   decisions: z.array(z.object({
     opportunityId: z.string(),
     sameAnnouncement: z.boolean(),
     confidence: z.enum(['high', 'medium', 'low']),
-    reason: z.string().max(500),
-  })).max(20),
+    reason: z.string().transform((reason) => reason.slice(0, 500)),
+  })).transform((decisions) => decisions.slice(0, 20)),
 });
 
 const duplicateDecisionsJsonSchema = {

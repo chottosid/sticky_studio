@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeOpportunity, RawExtractionSchema } from './contracts';
+import { ExtractionDraftSchema } from '@/domain/opportunity/schema';
+import { clampModelValue, normalizeOpportunity, RawExtractionSchema, type RawExtraction } from './contracts';
 
 const baseItem = {
   name: 'Research opening', details: 'Funded position', deadline: null, category: 'higher-study',
@@ -38,6 +39,43 @@ describe('LLM output normalization', () => {
     });
     expect(raw.opportunities).toHaveLength(2);
     expect(normalizeOpportunity(raw.opportunities[1]).category).toBe('job');
+  });
+
+  it('clamps oversized model output instead of failing the draft schema', () => {
+    const raw = RawExtractionSchema.parse({
+      ...baseRaw,
+      opportunities: [{
+        ...baseItem,
+        name: 'N'.repeat(600),
+        requirements: ['valid requirement', ''],
+        evidence: [
+          { field: 'organizationName', sourceId: 's1', excerpt: 'E'.repeat(600), confidence: 'high' },
+          { field: 'F'.repeat(300), sourceId: 's1', excerpt: 'excerpt', confidence: 'high' },
+        ],
+        unresolvedFields: ['U'.repeat(300), ''],
+      }],
+      warnings: ['W'.repeat(1_500), ''],
+    });
+    const clamped = clampModelValue(raw) as RawExtraction;
+    const item = clamped.opportunities[0];
+
+    const draft = ExtractionDraftSchema.parse(clampModelValue({
+      opportunities: [{
+        opportunity: normalizeOpportunity(item),
+        evidence: item.evidence,
+        unresolvedFields: item.unresolvedFields,
+      }],
+      warnings: clamped.warnings,
+      discoveredSourceUrls: [],
+    }));
+
+    expect(draft.opportunities[0].opportunity.name).toHaveLength(500);
+    expect(draft.opportunities[0].opportunity.requirements).toEqual(['valid requirement']);
+    expect(draft.opportunities[0].evidence[0].excerpt).toHaveLength(500);
+    expect(draft.opportunities[0].evidence[1].field).toHaveLength(200);
+    expect(draft.opportunities[0].unresolvedFields[0]).toHaveLength(200);
+    expect(draft.warnings).toHaveLength(1);
+    expect(draft.warnings[0]).toHaveLength(1_000);
   });
 });
 

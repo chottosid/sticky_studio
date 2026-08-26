@@ -4,7 +4,7 @@ import {
   ExtractionDraftSchema,
   type ExtractionDraft,
 } from '@/domain/opportunity/schema';
-import { normalizeOpportunity, type RawExtraction, type RawOpportunity } from './contracts';
+import { clampModelValue, normalizeOpportunity, type RawExtraction, type RawOpportunity } from './contracts';
 import {
   prepareExtractionSources,
   urlsFromPreparedSources,
@@ -100,19 +100,23 @@ function relevantUnresolvedFields(raw: RawOpportunity): string[] {
 
 function toDraft(raw: RawExtraction, sources: PreparedSource[], extraWarnings: string[]): ExtractionDraft {
   const sourceIds = new Set(sources.map((source) => source.id));
+  // Clamp before the strict draft parse: model output that exceeds a field cap
+  // (e.g. a long evidence excerpt) is truncated, never a failed extraction.
+  const clamped = clampModelValue(raw) as RawExtraction;
 
-  return ExtractionDraftSchema.parse({
-    opportunities: raw.opportunities.map((item) => ({
+  return ExtractionDraftSchema.parse(clampModelValue({
+    opportunities: clamped.opportunities.map((item) => ({
       opportunity: normalizeOpportunity(item),
-      evidence: item.evidence.filter((entry) => sourceIds.has(entry.sourceId)),
-      unresolvedFields: Array.from(new Set([...item.unresolvedFields, ...relevantUnresolvedFields(item)])),
+      evidence: item.evidence.filter((entry) => sourceIds.has(entry.sourceId) && entry.field.trim()),
+      unresolvedFields: Array.from(new Set([...item.unresolvedFields, ...relevantUnresolvedFields(item)]))
+        .filter((field) => field.trim()),
     })),
-    warnings: Array.from(new Set([...raw.warnings, ...extraWarnings])),
+    warnings: Array.from(new Set([...clamped.warnings, ...extraWarnings])).filter((warning) => warning.trim()),
     discoveredSourceUrls: normalizeUrls([
-      ...raw.discoveredSourceUrls,
+      ...clamped.discoveredSourceUrls,
       ...sources.flatMap((source) => source.sourceUrl ? [source.sourceUrl] : []),
     ]),
-  });
+  }));
 }
 
 export async function extractOpportunityDetails(input: unknown): Promise<ExtractionDraft> {

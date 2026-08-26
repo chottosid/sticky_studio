@@ -34,7 +34,6 @@ export type UploadedSource = {
 
 export async function uploadOpportunitySources(sources: ExtractionSource[]): Promise<UploadedSource[]> {
   const client = getStorageClient();
-  const groupId = crypto.randomUUID();
   const uploaded: UploadedSource[] = [];
   const totalBytes = sources.reduce((total, source) => total + sourcePayload(source).bytes.length, 0);
   if (totalBytes > 10 * 1024 * 1024) {
@@ -45,10 +44,13 @@ export async function uploadOpportunitySources(sources: ExtractionSource[]): Pro
     for (const [index, source] of sources.entries()) {
       const { bytes, mimeType } = sourcePayload(source);
       const originalName = source.kind === 'text' ? `${source.name}.txt` : source.name;
-      const storagePath = `${groupId}/${index + 1}-${safeFileName(originalName)}`;
+      const contentSha256 = sourceContentSha256(source);
+      // Content-addressed path: identical sources uploaded for several
+      // opportunities (or on re-extraction) collapse to one object.
+      const storagePath = `${contentSha256}/${index + 1}-${safeFileName(originalName)}`;
       const { error } = await client.storage
         .from(OPPORTUNITY_SOURCE_BUCKET)
-        .upload(storagePath, bytes, { contentType: mimeType, upsert: false });
+        .upload(storagePath, bytes, { contentType: mimeType, upsert: true });
 
       if (error) throw new Error(`Could not upload ${originalName}: ${error.message}`);
       uploaded.push({
@@ -57,7 +59,7 @@ export async function uploadOpportunitySources(sources: ExtractionSource[]): Pro
         mimeType,
         storagePath,
         sourceUrl: null,
-        contentSha256: sourceContentSha256(source),
+        contentSha256,
         canonicalUrl: null,
       });
     }

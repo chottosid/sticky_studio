@@ -151,7 +151,8 @@ function validUrlOrNull(value: string | null): string | null {
   if (!value) return null;
   try {
     const url = new URL(value);
-    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null;
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return url.toString().length <= 2_000 ? url.toString() : null;
   } catch {
     return null;
   }
@@ -160,7 +161,45 @@ function validUrlOrNull(value: string | null): string | null {
 function validEmailOrNull(value: string | null): string | null {
   if (!value) return null;
   const trimmed = value.trim();
+  if (trimmed.length > 320) return null;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed) ? trimmed : null;
+}
+
+// Model output is clamped to the draft schema's caps instead of being rejected:
+// one over-long excerpt or warning must never throw away a whole extraction.
+// Caps mirror src/domain/opportunity/schema.ts — keep them in sync.
+const STRING_CAPS: Record<string, number> = {
+  name: 500, details: 20_000, organizationName: 500, organizationType: 200, location: 500,
+  eligibility: 5_000, contactEmail: 320, applicationUrl: 2_000,
+  roleTitle: 500, employmentType: 200, workplaceMode: 200, compensation: 1_000, duration: 500,
+  programName: 500, degreeLevel: 200, department: 500, labName: 500, funding: 1_000, startTerm: 200,
+  theme: 1_000, prize: 1_000, eventDate: 100,
+  field: 200, sourceId: 200, excerpt: 500,
+};
+const ITEM_CAPS: Record<string, number> = {
+  requirements: 500, skills: 500, professorNames: 500, researchAreas: 500,
+  warnings: 1_000, unresolvedFields: 200,
+};
+const LENGTH_CAPS: Record<string, number> = {
+  opportunities: 10, evidence: 100, unresolvedFields: 100, requirements: 50, skills: 50,
+  professorNames: 50, researchAreas: 50, warnings: 50, discoveredSourceUrls: 20,
+};
+
+export function clampModelValue(value: unknown, key = ''): unknown {
+  if (typeof value === 'string') return value.slice(0, STRING_CAPS[key] ?? 2_000);
+  if (Array.isArray(value)) {
+    const itemCap = ITEM_CAPS[key] ?? 2_000;
+    return value
+      .slice(0, LENGTH_CAPS[key] ?? 100)
+      .filter((item) => typeof item !== 'string' || item.trim().length > 0)
+      .map((item) => (item && typeof item === 'object'
+        ? clampModelValue(item)
+        : typeof item === 'string' ? item.slice(0, itemCap) : item));
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, clampModelValue(v, k)]));
+  }
+  return value;
 }
 
 function normalizeBase(opportunity: z.infer<typeof RawOpportunitySchema>) {

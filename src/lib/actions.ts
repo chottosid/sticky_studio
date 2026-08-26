@@ -111,8 +111,10 @@ export async function addOpportunity(input: unknown) {
       }
     }
 
+    // Upload once; every opportunity in the batch references the same
+    // content-addressed objects (deduped in storage, see source-storage.ts).
+    uploadedSources = await uploadOpportunitySources(sources);
     for (const opportunity of opportunities) {
-      uploadedSources = await uploadOpportunitySources(sources);
       try {
         const saved = await saveOpportunity(
           opportunity,
@@ -122,7 +124,10 @@ export async function addOpportunity(input: unknown) {
         savedCount += 1;
         await sendNewOpportunityEmail(saved);
       } catch (error) {
-        await removeStoredSources(uploadedSources.map((source) => source.storagePath));
+        // Only remove when nothing was saved — earlier saves still reference the objects.
+        if (savedCount === 0) {
+          await removeStoredSources(uploadedSources.map((source) => source.storagePath));
+        }
         throw error;
       }
     }
