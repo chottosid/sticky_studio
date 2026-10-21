@@ -10,7 +10,6 @@ import {
   type OpportunityCategory,
 } from '@/domain/opportunity/schema';
 import { deleteOpportunity, getOpportunities, updateOpportunity } from '@/lib/data';
-import { sendTestEmail } from '@/lib/email';
 import {
   createSessionToken,
   SESSION_COOKIE_NAME,
@@ -23,10 +22,6 @@ import { saveOpportunityBatch } from '@/lib/save-opportunities';
 export async function isAuthenticated() {
   const cookieStore = await cookies();
   return verifySessionToken(cookieStore.get(SESSION_COOKIE_NAME)?.value);
-}
-
-async function requireAuthentication() {
-  if (!(await isAuthenticated())) throw new Error('Unauthorized');
 }
 
 const loginSchema = z.object({
@@ -143,18 +138,5 @@ export async function updateOpportunityAction(input: unknown) {
   } catch (error) {
     console.error('Update failed:', error);
     return { success: false as const, message: 'Failed to update the opportunity.' };
-  }
-}
-
-export async function sendTestEmailAction() {
-  try {
-    await requireAuthentication();
-    const info = await sendTestEmail();
-    return info
-      ? { success: true as const, message: 'Test email sent successfully.' }
-      : { success: false as const, message: 'Email was not sent. Check server configuration.' };
-  } catch (error) {
-    console.error('Test email action failed:', error);
-    return { success: false as const, message: 'An error occurred while sending the test email.' };
   }
 }

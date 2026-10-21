@@ -57,16 +57,3 @@ export async function sendNewOpportunityEmail(opportunity: Opportunity) {
   `;
   await sendEmail(subject, html);
 }
-
-export async function sendTestEmail() {
-  const subject = 'Sticky Studio: Test Email';
-  const html = `
-    <div style="font-family: Arial, sans-serif; padding: 20px;">
-      <h2>Test Email Successful!</h2>
-      <p>This email was sent to verify your SMTP configuration.</p>
-      <p><strong>Sent at:</strong> ${new Date().toLocaleString()}</p>
-      <p><strong>Configured Recipients:</strong> ${process.env.RECIPIENT_EMAILS}</p>
-    </div>
-  `;
-  return await sendEmail(subject, html);
-}
