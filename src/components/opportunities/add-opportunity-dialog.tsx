@@ -7,6 +7,7 @@ import { OpportunityInputSchema, type ExtractionSource } from '@/domain/opportun
 import type { DuplicateMatch, ExtractionDraft, OpportunityDraftValue, OpportunityInput } from '@/lib/types';
 import { addOpportunity } from '@/lib/actions';
 import { extractOpportunityDraft } from '@/lib/extraction-actions';
+import { saveTelegramDraft } from '@/lib/telegram-actions';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter,
@@ -24,12 +25,24 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
+// Declared union: a ternary over the two actions would subtype-reduce away the duplicate-warning variant.
+type SaveResult =
+  | Awaited<ReturnType<typeof addOpportunity>>
+  | Awaited<ReturnType<typeof saveTelegramDraft>>;
+
 type DuplicateWarning = {
   matches: DuplicateMatch[];
   token: string;
 };
 
-export function AddOpportunityDialog() {
+type AddOpportunityDialogProps = {
+  /** Opens straight into review for a Telegram inbox draft; sources stay on the server. */
+  inboxItem?: { id: number; draft: ExtractionDraft | null };
+  trigger?: React.ReactNode;
+  onSaved?: () => void;
+};
+
+export function AddOpportunityDialog({ inboxItem, trigger, onSaved }: AddOpportunityDialogProps = {}) {
   const [open, setOpen] = React.useState(false);
   const [step, setStep] = React.useState<'input' | 'review'>('input');
   const [activeTab, setActiveTab] = React.useState<'files' | 'text'>('files');
@@ -56,10 +69,16 @@ export function AddOpportunityDialog() {
     setIsExtracting(false);
     setIsSaving(false);
     setDuplicateWarning(null);
-  }, []);
+    if (inboxItem?.draft) {
+      setDraft(inboxItem.draft);
+      setItems(inboxItem.draft.opportunities.map((item) => item.opportunity));
+      setStep('review');
+    }
+  }, [inboxItem]);
 
+  // Also runs on mount (open=false), so an inbox dialog is already in review before it opens — no flash of the input step.
   React.useEffect(() => {
-    if (!open) reset();
+    reset();
   }, [open, reset]);
 
   const buildSources = (): ExtractionSource[] => {
@@ -133,12 +152,18 @@ export function AddOpportunityDialog() {
 
     setIsSaving(true);
     try {
-      const result = await addOpportunity({
-        opportunities: parsedItems,
-        sources,
-        discoveredSourceUrls: draft?.discoveredSourceUrls || [],
-        duplicateConfirmationToken,
-      });
+      const result: SaveResult = inboxItem
+        ? await saveTelegramDraft({
+          telegramMessageId: inboxItem.id,
+          opportunities: parsedItems,
+          duplicateConfirmationToken,
+        })
+        : await addOpportunity({
+          opportunities: parsedItems,
+          sources,
+          discoveredSourceUrls: draft?.discoveredSourceUrls || [],
+          duplicateConfirmationToken,
+        });
       if (!result.success && 'code' in result && result.code === 'DUPLICATE_WARNING') {
         setDuplicateWarning({
           matches: result.duplicateMatches,
@@ -149,6 +174,7 @@ export function AddOpportunityDialog() {
       if (!result.success) throw new Error(result.message);
       toast({ title: 'Opportunity saved', description: result.message });
       setOpen(false);
+      onSaved?.();
     } catch (error) {
       toast({
         variant: 'destructive',
@@ -163,10 +189,12 @@ export function AddOpportunityDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" className="h-8 gap-1">
-          <PlusCircle className="h-3.5 w-3.5" />
-          <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">Add Opportunity</span>
-        </Button>
+        {trigger ?? (
+          <Button size="sm" className="h-8 gap-1">
+            <PlusCircle className="h-3.5 w-3.5" />
+            <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">Add Opportunity</span>
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
@@ -251,7 +279,9 @@ export function AddOpportunityDialog() {
               unresolvedFields={draft?.opportunities[activeIndex]?.unresolvedFields}
             />
             <DialogFooter>
-              <Button variant="ghost" onClick={() => setStep('input')} disabled={isSaving}>Back</Button>
+              {!inboxItem && (
+                <Button variant="ghost" onClick={() => setStep('input')} disabled={isSaving}>Back</Button>
+              )}
               <Button onClick={() => void handleSave()} disabled={isSaving}>
                 {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                 {isSaving ? 'Saving…' : items.length > 1 ? `Save ${items.length} Opportunities` : 'Save Opportunity'}

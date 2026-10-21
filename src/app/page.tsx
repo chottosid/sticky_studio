@@ -1,6 +1,8 @@
 import Header from '@/components/layout/header';
 import PaginatedOpportunityList from '@/components/opportunities/paginated-opportunity-list';
 import { getOpportunities } from '@/lib/data';
+import { TelegramInbox } from '@/components/telegram/telegram-inbox';
+import { getInboxItems } from '@/lib/telegram/store';
 import { isAuthenticated } from '@/lib/actions';
 import { redirect } from 'next/navigation';
 import { OpportunityCategory } from '@/lib/types';
@@ -33,11 +35,13 @@ export default async function Home({
     'upcoming',
     validCategory
   );
+  const inbox = await getInboxItems();
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-gradient-to-br from-primary/5 via-background to-accent/5">
       <Header />
       <main className="flex flex-1 flex-col gap-6 p-4 md:gap-8 md:p-8">
+        <TelegramInbox items={inbox} />
         <PaginatedOpportunityList
           initialOpportunities={opportunities}
           initialTotal={total}
