@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ExtractionDraftSchema, OpportunityInputSchema } from './schema';
+import { ExtractionDraftSchema, ExtractionRequestSchema, OpportunityInputSchema } from './schema';
 
 describe('OpportunityInputSchema', () => {
   it('accepts an opportunity with no deadline', () => {
@@ -50,5 +50,16 @@ describe('ExtractionDraftSchema', () => {
     });
     expect(draft.opportunities[0].opportunity.name).toBe('');
     expect(draft.opportunities[0].unresolvedFields).toContain('name');
+  });
+});
+
+describe('ExtractionRequestSchema', () => {
+  it('accepts a Telegram bundle of one text and nine screenshots', () => {
+    const image = { kind: 'image', name: 'shot', mimeType: 'image/jpeg', dataUri: 'data:image/jpeg;base64,AA==' };
+    const sources = [
+      { id: 'text', kind: 'text', text: 'post' },
+      ...Array.from({ length: 9 }, (_, index) => ({ ...image, id: `media-${index}` })),
+    ];
+    expect(ExtractionRequestSchema.parse({ sources }).sources).toHaveLength(10);
   });
 });

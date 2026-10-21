@@ -49,6 +49,10 @@ export type DownloadFile = (fileId: string, mimeType: string) => Promise<string>
 
 // Matches MAX_EXTRACTION_BYTES in src/ai/input.ts; larger files fail extraction anyway.
 export const MAX_TELEGRAM_FILE_BYTES = 10 * 1024 * 1024;
+// A post split over several messages (screenshot, then its text) arrives within seconds.
+export const QUIET_WINDOW_SECONDS = 60;
+// One text source plus this many attachments fits ExtractionRequestSchema's 10-source cap.
+const MAX_BUNDLE_ATTACHMENTS = 9;
 const MIN_TEXT_CHARS = 80;
 const URL_PATTERN = /https?:\/\/\S+/i;
 const GONE_STATUSES = new Set(['left', 'kicked']);
@@ -118,11 +122,13 @@ export function messageAction(
   message: TelegramMessage,
   listed: boolean,
   ownerId: number,
+  continuesBundle = false,
 ): 'migrate' | 'queue' | 'ignore' {
   if (chatMigration(message)) return 'migrate';
   if (message.from?.is_bot && !message.sender_chat) return 'ignore';
-  if (!isAllowedChat(message.chat, listed, ownerId) || !shouldProcess(message)) return 'ignore';
-  return 'queue';
+  if (!isAllowedChat(message.chat, listed, ownerId)) return 'ignore';
+  // A short follow-up ("internship and jobs in japan" after a link) belongs to the waiting bundle.
+  return shouldProcess(message) || continuesBundle ? 'queue' : 'ignore';
 }
 
 export function messageLink(chat: TelegramChat, messageId: number): string | null {
@@ -148,11 +154,30 @@ function chatLabel(message: TelegramMessage): string {
   return message.chat.title ?? 'Telegram group';
 }
 
-export async function buildTelegramSources(
-  message: TelegramMessage,
-  download: DownloadFile,
-  timezone: string,
-): Promise<ExtractionSource[]> {
+/** Who posted a message; anonymous admins and channel posts are keyed by their chat. */
+export function senderKey(message: TelegramMessage): string {
+  return String(message.sender_chat?.id ?? message.from?.id ?? message.chat.id);
+}
+
+/**
+ * Splits a chronological message list into bundles: consecutive messages from one sender with
+ * gaps of at most `quietWindowSeconds` describe one post (e.g. a screenshot and its caption).
+ */
+export function groupIntoBundles(messages: TelegramMessage[], quietWindowSeconds: number): TelegramMessage[][] {
+  const bundles: TelegramMessage[][] = [];
+  for (const message of messages) {
+    const current = bundles[bundles.length - 1];
+    const previous = current?.[current.length - 1];
+    if (previous && senderKey(previous) === senderKey(message) && message.date - previous.date <= quietWindowSeconds) {
+      current.push(message);
+    } else {
+      bundles.push([message]);
+    }
+  }
+  return bundles;
+}
+
+function messageText(message: TelegramMessage, timezone: string): string {
   // The "Posted" line is the date anchor the extraction prompt resolves relative dates against.
   const posted = dateInTimezone(new Date((message.forward_origin?.date ?? message.date) * 1_000), timezone);
   const header = [`Posted ${posted} in Telegram chat "${chatLabel(message)}"`, originLink(message)]
@@ -163,34 +188,52 @@ export async function buildTelegramSources(
   const text = (message.text ?? message.caption ?? '').trim();
   const body = [text, hiddenLinks.length ? `Links: ${Array.from(new Set(hiddenLinks)).join(' ')}` : '']
     .filter(Boolean).join('\n');
+  return [header, body].filter(Boolean).join('\n\n');
+}
 
+/** All texts of a bundle become one text source; each photo or PDF becomes its own source. */
+export async function buildBundleSources(
+  messages: TelegramMessage[],
+  download: DownloadFile,
+  timezone: string,
+): Promise<ExtractionSource[]> {
+  const attachments = messages.flatMap((message) => {
+    const photos = message.photo ?? [];
+    const photo = photos[photos.length - 1];
+    return [
+      ...(photo ? [{ fileId: photo.file_id, kind: 'image' as const, mimeType: 'image/jpeg', name: 'Telegram photo' }] : []),
+      ...(message.document && hasPdf(message)
+        ? [{
+          fileId: message.document.file_id,
+          kind: 'pdf' as const,
+          mimeType: 'application/pdf',
+          name: message.document.file_name || 'Telegram document.pdf',
+        }]
+        : []),
+    ];
+  });
+  const included = attachments.slice(0, MAX_BUNDLE_ATTACHMENTS);
+  const omitted = attachments.length - included.length;
+
+  const text = [
+    ...messages.map((message) => messageText(message, timezone)),
+    ...(omitted ? [`(${omitted} more attachments were not included)`] : []),
+  ].join('\n\n');
   const sources: ExtractionSource[] = [{
     id: 'telegram-message',
     kind: 'text',
     name: 'Telegram message',
     mimeType: 'text/plain',
-    text: [header, body].filter(Boolean).join('\n\n').slice(0, 200_000),
+    text: text.slice(0, 200_000),
   }];
 
-  const photos = message.photo ?? [];
-  const photo = photos[photos.length - 1];
-  if (photo) {
+  for (const [index, attachment] of included.entries()) {
     sources.push({
-      id: 'telegram-photo',
-      kind: 'image',
-      name: 'Telegram photo',
-      mimeType: 'image/jpeg',
-      dataUri: await download(photo.file_id, 'image/jpeg'),
-    });
-  }
-
-  if (message.document && hasPdf(message)) {
-    sources.push({
-      id: 'telegram-pdf',
-      kind: 'pdf',
-      name: message.document.file_name || 'Telegram document.pdf',
-      mimeType: 'application/pdf',
-      dataUri: await download(message.document.file_id, 'application/pdf'),
+      id: `telegram-media-${index + 1}`,
+      kind: attachment.kind,
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      dataUri: await download(attachment.fileId, attachment.mimeType),
     });
   }
   return sources;

@@ -16,6 +16,7 @@ describe('extraction prompt', () => {
     expect(rules).toContain('English');
     expect(rules).toContain('deadline has already passed');
     expect(rules).toContain('higher-study: MS/PhD/postdoc');
+    expect(rules).toContain('posted together');
     expect(rules).not.toContain('fetched pages');
     expect(extractionInstructions('enriched', '2026-10-21')).toContain('fetched pages');
   });

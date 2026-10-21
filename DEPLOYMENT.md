@@ -94,3 +94,9 @@ If the application deployment must be rolled back, the additive columns do not b
 6. Forwarding a post to the bot in a private chat from the owner account also queues it.
 
 New opportunities appear in the **Telegram inbox** on the home page; nothing is saved until you review it. For local testing, expose port 9002 over https (for example `cloudflared tunnel --url http://localhost:9002`) and run `npm run telegram:setup -- <tunnel-url>`. Re-run it with the production URL afterwards, because only one webhook can be registered at a time.
+
+### Multi-message posts and importing history
+
+- Run `npm run db:migrate` before deploying (adds `005_telegram_bundles.sql`).
+- Messages one person posts within 60 s of each other (a screenshot, then its text) are extracted together as one inbox item. The webhook's background run waits out that window, so `/api/telegram/webhook` uses `maxDuration = 300`, which needs Vercel Fluid compute.
+- To import a group's earlier messages: in Telegram Desktop use **Export chat history** (HTML, with photos), add the bot to that group, then run `npm run telegram:import -- <export folder>` from a trusted machine with production env vars. It is safe to re-run; already imported posts are skipped and failed ones are retried.

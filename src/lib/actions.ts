@@ -62,7 +62,7 @@ export async function logout() {
 
 const SaveOpportunityRequestSchema = z.object({
   opportunities: z.array(OpportunityInputSchema).min(1).max(10),
-  sources: z.array(ExtractionSourceSchema).min(1).max(5),
+  sources: z.array(ExtractionSourceSchema).min(1).max(10),
   discoveredSourceUrls: z.array(z.string().url().max(2_000)).max(20).default([]),
   duplicateConfirmationToken: z.string().max(5_000).optional(),
 });

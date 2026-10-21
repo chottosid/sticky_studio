@@ -134,7 +134,7 @@ export const ExtractionSourceSchema = z.discriminatedUnion('kind', [
 ]);
 
 export const ExtractionRequestSchema = z.object({
-  sources: z.array(ExtractionSourceSchema).min(1).max(5),
+  sources: z.array(ExtractionSourceSchema).min(1).max(10),
 });
 
 export const DuplicateMatchSchema = z.object({

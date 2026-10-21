@@ -18,6 +18,7 @@ Categories (category must be job, internship, contest, or higher-study):
 
 Entries:
 - One entry per distinct opening, program, or contest; merge reposts of the same one.
+- Sources and messages posted together usually describe one post split into parts (e.g. a screenshot and its text): merge them into one entry unless they clearly announce different openings.
 - At most 10. If more exist, keep the 10 with the latest deadlines and add a warning stating how many were found.
 - name is "Role or Program at Organization" whenever the organization is known.
 - organizationName means company for jobs/internships, institution/university for higher study, and organizer for contests.
