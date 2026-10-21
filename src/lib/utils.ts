@@ -32,3 +32,9 @@ export function dateInTimezone(date: Date, timezone: string): string {
   const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
   return `${value('year')}-${value('month')}-${value('day')}`;
 }
+
+/** `value.slice(0, max)` that never cuts a surrogate pair in half (emoji, math-bold letters). */
+export function sliceText(value: string, max: number): string {
+  const sliced = value.slice(0, max);
+  return /[\uD800-\uDBFF]$/.test(sliced) ? sliced.slice(0, -1) : sliced;
+}

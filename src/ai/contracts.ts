@@ -7,6 +7,7 @@ import {
   type OpportunityCategory,
   type OpportunityDraftValue,
 } from '@/domain/opportunity/schema';
+import { sliceText } from '@/lib/utils';
 
 const nullableString = z.string().nullable();
 
@@ -186,7 +187,7 @@ const LENGTH_CAPS: Record<string, number> = {
 };
 
 export function clampModelValue(value: unknown, key = ''): unknown {
-  if (typeof value === 'string') return value.slice(0, STRING_CAPS[key] ?? 2_000);
+  if (typeof value === 'string') return sliceText(value, STRING_CAPS[key] ?? 2_000);
   if (Array.isArray(value)) {
     const itemCap = ITEM_CAPS[key] ?? 2_000;
     return value
@@ -194,7 +195,7 @@ export function clampModelValue(value: unknown, key = ''): unknown {
       .filter((item) => typeof item !== 'string' || item.trim().length > 0)
       .map((item) => (item && typeof item === 'object'
         ? clampModelValue(item)
-        : typeof item === 'string' ? item.slice(0, itemCap) : item));
+        : typeof item === 'string' ? sliceText(item, itemCap) : item));
   }
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, clampModelValue(v, k)]));

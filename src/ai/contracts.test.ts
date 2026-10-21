@@ -84,6 +84,14 @@ describe('LLM output normalization', () => {
     expect(draft.warnings[0]).toHaveLength(1_000);
   });
 
+  it('never splits a surrogate pair when clamping (math-bold text from Telegram posts)', () => {
+    const name = `a${'𝗿'.repeat(300)}`; // 601 UTF-16 units; a cut at 500 lands inside a pair
+    const clamped = clampModelValue({ name }) as { name: string };
+    expect(clamped.name.isWellFormed()).toBe(true);
+    expect(clamped.name.length).toBe(499);
+    expect(() => JSON.parse(JSON.stringify(clamped))).not.toThrow();
+  });
+
   it('accepts an extraction with no opportunities', () => {
     expect(RawExtractionSchema.parse({ opportunities: [], discoveredSourceUrls: [], warnings: [] }).opportunities)
       .toEqual([]);

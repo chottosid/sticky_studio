@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { ExtractionSource } from '@/domain/opportunity/schema';
-import { dateInTimezone } from '@/lib/utils';
+import { dateInTimezone, sliceText } from '@/lib/utils';
 
 export type TelegramChat = {
   id: number;
@@ -251,7 +251,7 @@ export async function buildBundleSources(
     kind: 'text',
     name: 'Telegram message',
     mimeType: 'text/plain',
-    text: text.slice(0, 200_000),
+    text: sliceText(text, 200_000),
   }];
 
   for (const [index, attachment] of included.entries()) {
