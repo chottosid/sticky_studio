@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createClient } from '@supabase/supabase-js';
 import type { ExtractionSource, OpportunitySource } from '@/lib/types';
+import { query } from './db';
 import { sourceContentSha256, sourcePayload } from './source-payload';
 
 export const OPPORTUNITY_SOURCE_BUCKET = 'opportunity-sources';
@@ -70,10 +71,21 @@ export async function uploadOpportunitySources(sources: ExtractionSource[]): Pro
   }
 }
 
+/**
+ * Deletes stored objects that no saved opportunity references any more. Paths are shared
+ * (content-addressed), so a failed or duplicate save must never delete another row's file.
+ */
 export async function removeStoredSources(paths: string[]): Promise<void> {
   if (paths.length === 0) return;
+  const referenced = await query<{ storage_path: string }>(
+    'SELECT DISTINCT storage_path FROM opportunity_sources WHERE storage_path = ANY($1)',
+    [paths],
+  );
+  const stillUsed = new Set(referenced.rows.map((row) => row.storage_path));
+  const orphaned = Array.from(new Set(paths)).filter((path) => !stillUsed.has(path));
+  if (orphaned.length === 0) return;
   const client = getStorageClient();
-  const { error } = await client.storage.from(OPPORTUNITY_SOURCE_BUCKET).remove(paths);
+  const { error } = await client.storage.from(OPPORTUNITY_SOURCE_BUCKET).remove(orphaned);
   if (error) console.error('Could not remove source objects:', error.message);
 }
 

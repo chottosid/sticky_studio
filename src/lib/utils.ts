@@ -38,3 +38,26 @@ export function sliceText(value: string, max: number): string {
   const sliced = value.slice(0, max);
   return /[\uD800-\uDBFF]$/.test(sliced) ? sliced.slice(0, -1) : sliced;
 }
+
+/** Escapes a user search term so ILIKE treats %, _ and \ literally (pair with ESCAPE '\'). */
+export function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+const HTML_ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
+/** For interpolating untrusted text (LLM output, Telegram posts) into email HTML. */
+export function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => HTML_ESCAPES[char]);
+}
+
+/** Opportunity ids are SERIAL integers; anything else would make Postgres throw instead of 404. */
+export function isNumericId(value: string): boolean {
+  return /^\d{1,9}$/.test(value);
+}
+
+/** True for a real YYYY-MM-DD calendar date (rejects 2026-02-30). */
+export function isCalendarDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+}

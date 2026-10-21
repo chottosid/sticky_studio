@@ -63,3 +63,12 @@ describe('ExtractionRequestSchema', () => {
     expect(ExtractionRequestSchema.parse({ sources }).sources).toHaveLength(10);
   });
 });
+
+describe('deadline validation', () => {
+  const base = { name: 'Role', category: 'job', attributes: {} };
+
+  it('rejects dates that do not exist', () => {
+    expect(OpportunityInputSchema.safeParse({ ...base, deadline: '2026-02-30' }).success).toBe(false);
+    expect(OpportunityInputSchema.safeParse({ ...base, deadline: '2028-02-29' }).success).toBe(true);
+  });
+});

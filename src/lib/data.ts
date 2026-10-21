@@ -6,11 +6,13 @@ import {
 } from '@/domain/opportunity/schema';
 import type { DocumentType, Opportunity, OpportunitySource } from '@/lib/types';
 import { getClient, query } from './db';
-import { formatDeadline } from './utils';
+import { dateInTimezone, escapeLike, formatDeadline, isNumericId } from './utils';
 import { attachSignedUrls, type UploadedSource } from './source-storage';
 import { canonicalizeUrl } from './duplicate-normalization';
 
 type Queryable = Pick<PoolClient, 'query'>;
+
+const appToday = () => dateInTimezone(new Date(), process.env.APP_TIMEZONE || 'Asia/Dhaka');
 
 const SELECT_COLUMNS = `
   id, name, details, deadline, category,
@@ -81,24 +83,30 @@ export async function getOpportunities(
   };
 
   if (searchQuery?.trim()) {
-    const placeholder = addParameter(`%${searchQuery.trim()}%`);
+    const placeholder = addParameter(`%${escapeLike(searchQuery.trim())}%`);
     conditions.push(`(
-      name ILIKE ${placeholder} OR details ILIKE ${placeholder} OR
-      COALESCE(organization_name, '') ILIKE ${placeholder} OR
-      COALESCE(location, '') ILIKE ${placeholder}
+      name ILIKE ${placeholder} ESCAPE '\\' OR details ILIKE ${placeholder} ESCAPE '\\' OR
+      COALESCE(organization_name, '') ILIKE ${placeholder} ESCAPE '\\' OR
+      COALESCE(location, '') ILIKE ${placeholder} ESCAPE '\\'
     )`);
   }
-  if (status === 'upcoming') conditions.push('(deadline IS NULL OR deadline >= CURRENT_DATE)');
-  if (status === 'past') conditions.push('(deadline IS NOT NULL AND deadline < CURRENT_DATE)');
+  // "Today" is the app's calendar day, not the database's UTC date.
+  if (status) {
+    const today = addParameter(appToday());
+    conditions.push(status === 'upcoming'
+      ? `(deadline IS NULL OR deadline >= ${today}::date)`
+      : `(deadline IS NOT NULL AND deadline < ${today}::date)`);
+  }
   if (category) conditions.push(`category = ${addParameter(category)}`);
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const validSortColumns = ['created_at', 'deadline', 'name', 'id'];
   const safeSortBy = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
   const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+  // id breaks ties so LIMIT/OFFSET pages never repeat or skip rows with equal sort keys.
   const order = safeSortBy === 'deadline'
-    ? `ORDER BY deadline ${safeSortOrder} NULLS LAST`
-    : `ORDER BY ${safeSortBy} ${safeSortOrder}`;
+    ? `ORDER BY deadline ${safeSortOrder} NULLS LAST, id ${safeSortOrder}`
+    : `ORDER BY ${safeSortBy} ${safeSortOrder}, id ${safeSortOrder}`;
 
   const countResult = await query(`SELECT COUNT(*) AS total FROM opportunities ${where}`, parameters);
   const total = Number(countResult.rows[0].total);
@@ -117,6 +125,7 @@ export async function getOpportunities(
 }
 
 export async function getOpportunityById(id: string): Promise<Opportunity | undefined> {
+  if (!isNumericId(id)) return undefined;
   const result = await query(`SELECT ${SELECT_COLUMNS} FROM opportunities WHERE id = $1`, [id]);
   if (!result.rowCount) return undefined;
 
@@ -216,6 +225,7 @@ async function insertSource(
 }
 
 export async function updateOpportunity(id: string, input: OpportunityInput): Promise<Opportunity | null> {
+  if (!isNumericId(id)) return null;
   const opportunity = OpportunityInputSchema.parse(input);
   const result = await query(
     `UPDATE opportunities SET
@@ -239,6 +249,7 @@ export async function updateOpportunity(id: string, input: OpportunityInput): Pr
 }
 
 export async function deleteOpportunity(id: string): Promise<{ deleted: boolean; storagePaths: string[] }> {
+  if (!isNumericId(id)) return { deleted: false, storagePaths: [] };
   const client = await getClient();
   try {
     await client.query('BEGIN');
@@ -247,18 +258,8 @@ export async function deleteOpportunity(id: string): Promise<{ deleted: boolean;
       [id],
     );
     const result = await client.query('DELETE FROM opportunities WHERE id = $1 RETURNING id', [id]);
-    // Sources can be shared (content-addressed uploads): after this row's
-    // sources cascade away, only remove objects no other opportunity references.
-    const candidatePaths = sourceResult.rows.map((row) => String(row.storage_path));
-    let storagePaths: string[] = candidatePaths;
-    if (candidatePaths.length) {
-      const remaining = await client.query(
-        'SELECT DISTINCT storage_path FROM opportunity_sources WHERE storage_path = ANY($1)',
-        [candidatePaths],
-      );
-      const stillReferenced = new Set(remaining.rows.map((row) => String(row.storage_path)));
-      storagePaths = candidatePaths.filter((path) => !stillReferenced.has(path));
-    }
+    // removeStoredSources keeps any object another opportunity still references.
+    const storagePaths = sourceResult.rows.map((row) => String(row.storage_path));
     await client.query('COMMIT');
     return {
       deleted: Boolean(result.rowCount),

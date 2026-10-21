@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isCalendarDate } from '@/lib/utils';
 
 export const opportunityCategories = ['job', 'internship', 'contest', 'higher-study'] as const;
 export const OpportunityCategorySchema = z.enum(opportunityCategories);
@@ -42,7 +43,7 @@ const commonOpportunityFields = {
   details: z.string().trim().max(20_000).default(''),
   deadline: z.preprocess(
     (value) => value === '' || value === undefined ? null : value,
-    z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Deadline must use YYYY-MM-DD.').nullable(),
+    z.string().refine(isCalendarDate, 'Deadline must be a real date (YYYY-MM-DD).').nullable(),
   ).default(null),
   organizationName: nullableText(500),
   organizationType: nullableText(200),

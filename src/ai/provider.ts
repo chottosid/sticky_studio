@@ -117,6 +117,8 @@ async function callGeminiRaw(
       responseMimeType: 'application/json',
       responseJsonSchema: request.jsonSchema,
       temperature: 0,
+      // Same budget as OpenRouter; an unbounded call can outlive the serverless function.
+      httpOptions: { timeout: 45_000 },
     },
   });
 

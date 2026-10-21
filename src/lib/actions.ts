@@ -1,6 +1,6 @@
 'use server';
 
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -18,11 +18,15 @@ import {
 } from '@/lib/auth/session';
 import { removeStoredSources } from '@/lib/source-storage';
 import { saveOpportunityBatch } from '@/lib/save-opportunities';
+import { credentialsMatch } from '@/lib/auth/credentials';
+import { query } from '@/lib/db';
 
 export async function isAuthenticated() {
   const cookieStore = await cookies();
   return verifySessionToken(cookieStore.get(SESSION_COOKIE_NAME)?.value);
 }
+
+const MAX_FAILED_LOGINS = 10;
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -33,10 +37,26 @@ export async function login(_previousState: unknown, formData: FormData) {
   const parsed = loginSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { message: 'Invalid email or password format.' };
 
-  const { email, password } = parsed.data;
-  if (email !== process.env.APP_USER_EMAIL || password !== process.env.APP_USER_PASSWORD) {
-    return { message: 'Invalid credentials.' };
+  // ponytail: per-address limit in Postgres; a shared address (NAT) shares the budget.
+  const client = (await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  const recent = await query<{ failures: string }>(
+    `SELECT COUNT(*) AS failures FROM login_attempts
+     WHERE client = $1 AND attempted_at > now() - interval '15 minutes'`,
+    [client],
+  );
+  if (Number(recent.rows[0].failures) >= MAX_FAILED_LOGINS) {
+    return { message: 'Too many failed sign-ins. Try again in 15 minutes.' };
   }
+
+  const { email, password } = parsed.data;
+  if (!credentialsMatch(email, password, {
+    email: process.env.APP_USER_EMAIL,
+    password: process.env.APP_USER_PASSWORD,
+  })) {
+    await query('INSERT INTO login_attempts (client) VALUES ($1)', [client]);
+    return { message: 'Email or password is incorrect.' };
+  }
+  await query(`DELETE FROM login_attempts WHERE client = $1 OR attempted_at < now() - interval '1 day'`, [client]);
 
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE_NAME, await createSessionToken(), {

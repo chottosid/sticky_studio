@@ -7,7 +7,7 @@ import {
   type OpportunityCategory,
   type OpportunityDraftValue,
 } from '@/domain/opportunity/schema';
-import { sliceText } from '@/lib/utils';
+import { isCalendarDate, sliceText } from '@/lib/utils';
 
 const nullableString = z.string().nullable();
 
@@ -145,7 +145,7 @@ export const rawExtractionJsonSchema = {
 
 function validDateOrNull(value: string | null): string | null {
   if (!value) return null;
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+  return isCalendarDate(value) ? value : null;
 }
 
 function validUrlOrNull(value: string | null): string | null {

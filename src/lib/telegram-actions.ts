@@ -44,7 +44,12 @@ export async function retryTelegramMessage(id: number) {
   if (!parsed.success) return { success: false as const, message: 'Invalid inbox item.' };
   const ids = await markForRetry(parsed.data);
   if (!ids.length) return { success: false as const, message: 'This inbox item cannot be retried.' };
-  await processClaimedRows(await claimRows(ids));
+  try {
+    await processClaimedRows(await claimRows(ids));
+  } catch (error) {
+    console.error('Telegram retry failed:', error);
+    return { success: false as const, message: 'Retry failed. Try again in a few minutes.' };
+  }
   revalidatePath('/');
   return { success: true as const };
 }

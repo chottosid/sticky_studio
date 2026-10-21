@@ -6,6 +6,9 @@ import type { QueryResult, QueryResultRow } from 'pg';
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  // Each serverless instance keeps its own pool; a small one keeps warm instances
+  // from exhausting the Supabase pooler's client limit.
+  max: 3,
 });
 
 // Handle pool errors

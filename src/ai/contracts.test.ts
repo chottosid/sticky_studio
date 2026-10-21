@@ -92,6 +92,11 @@ describe('LLM output normalization', () => {
     expect(() => JSON.parse(JSON.stringify(clamped))).not.toThrow();
   });
 
+  it('drops impossible model-produced deadlines', () => {
+    const raw = RawExtractionSchema.parse({ ...baseRaw, opportunities: [{ ...baseItem, deadline: '2026-02-30' }] });
+    expect(normalizeOpportunity(raw.opportunities[0]).deadline).toBeNull();
+  });
+
   it('accepts an extraction with no opportunities', () => {
     expect(RawExtractionSchema.parse({ opportunities: [], discoveredSourceUrls: [], warnings: [] }).opportunities)
       .toEqual([]);
