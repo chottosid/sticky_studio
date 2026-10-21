@@ -41,3 +41,6 @@ export function listOrder(params: ListParams): { sortBy: 'deadline' | 'created_a
 }
 
 export const LIST_PAGE_SIZE = 20;
+
+/** sessionStorage key: lets the detail page's back button return to the filtered list it came from. */
+export const LIST_RETURN_KEY = 'opportunity-list-return';

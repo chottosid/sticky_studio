@@ -17,8 +17,8 @@ export function daysUntil(deadline: string, today: string): number {
 export type DeadlineGroup = 'week' | 'month' | 'later' | 'none' | 'closed';
 
 export const deadlineGroupLabels: Record<DeadlineGroup, string> = {
-  week: 'Next 7 days',
-  month: 'Next 30 days',
+  week: 'Within 7 days',
+  month: 'Within 30 days',
   later: 'Later',
   none: 'No deadline',
   closed: 'Closed',

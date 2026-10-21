@@ -8,7 +8,7 @@ import { Loader2, Search, X } from 'lucide-react';
 import { opportunityCategoryLabels, opportunityCategoryOptions } from '@/domain/opportunity/config';
 import { getOpportunitiesAction } from '@/lib/actions';
 import { deadlineGroup, deadlineGroupLabels } from '@/lib/deadlines';
-import { LIST_PAGE_SIZE, listHref, listOrder, type ListParams } from '@/lib/list-params';
+import { LIST_PAGE_SIZE, LIST_RETURN_KEY, listHref, listOrder, type ListParams } from '@/lib/list-params';
 import type { Opportunity } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -33,9 +33,24 @@ export function OpportunityLedger({ params, initialItems, total, today }: Props)
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [query, setQuery] = React.useState(params.q);
+  const [baseItems, setBaseItems] = React.useState(initialItems);
+  const lastSentQuery = React.useRef(params.q);
 
-  // A save or delete refreshes the server list; drop pages fetched for the old one.
-  React.useEffect(() => setMore([]), [initialItems]);
+  // A save, delete or new search re-renders the server list; drop pages fetched for the old one.
+  // Done during render (not in an effect) so stale rows never show for a frame.
+  if (baseItems !== initialItems) {
+    setBaseItems(initialItems);
+    setMore([]);
+    setLoadError(null);
+  }
+
+  // Back/Forward changed the search: show it. Our own debounced updates are skipped.
+  React.useEffect(() => {
+    if (params.q !== lastSentQuery.current) {
+      lastSentQuery.current = params.q;
+      setQuery(params.q);
+    }
+  }, [params.q]);
 
   const navigate = React.useCallback((next: Partial<ListParams>, mode: 'push' | 'replace' = 'push') => {
     const href = listHref({ ...params, ...next });
@@ -44,12 +59,16 @@ export function OpportunityLedger({ params, initialItems, total, today }: Props)
 
   // Search as you type, without stacking a history entry per keystroke.
   React.useEffect(() => {
-    if (query.trim() === params.q) return;
-    const timer = window.setTimeout(() => navigate({ q: query.trim() }, 'replace'), 350);
+    const next = query.trim();
+    if (next === lastSentQuery.current) return;
+    const timer = window.setTimeout(() => {
+      lastSentQuery.current = next;
+      navigate({ q: next }, 'replace');
+    }, 350);
     return () => window.clearTimeout(timer);
-  }, [query, params.q, navigate]);
+  }, [query, navigate]);
 
-  const items = [...initialItems, ...more];
+  const items = [...baseItems, ...more];
   const hasMore = items.length < total;
 
   const loadMore = async () => {
@@ -57,9 +76,9 @@ export function OpportunityLedger({ params, initialItems, total, today }: Props)
     setLoadError(null);
     try {
       const { sortBy, sortOrder } = listOrder(params);
-      const page = Math.floor(items.length / LIST_PAGE_SIZE) + 1;
+      // By offset, not page number: rows added or removed elsewhere can't make it repeat a page.
       const result = await getOpportunitiesAction(
-        page, LIST_PAGE_SIZE, sortBy, sortOrder, params.q || undefined, params.status, params.category,
+        items.length, LIST_PAGE_SIZE, sortBy, sortOrder, params.q || undefined, params.status, params.category,
       );
       if (!result.success) {
         setLoadError('Your session has ended or the list could not load. Reload the page, or sign in again.');
@@ -130,7 +149,9 @@ export function OpportunityLedger({ params, initialItems, total, today }: Props)
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <Input
-            type="search"
+            type="text"
+            inputMode="search"
+            enterKeyHint="search"
             aria-label={`Search ${scope}`}
             placeholder={`Search ${scope}`}
             value={query}
@@ -205,6 +226,9 @@ function LedgerRow({ item, today }: { item: Opportunity; today: string }) {
   return (
     <Link
       href={`/opportunity/${item.id}`}
+      onClick={() => {
+        try { sessionStorage.setItem(LIST_RETURN_KEY, item.id); } catch { /* storage blocked: back goes home */ }
+      }}
       className="group grid grid-cols-[4.5rem_1fr] gap-x-4 px-1 py-4 transition-colors hover:bg-card focus-visible:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[5rem_1fr_auto] sm:px-3"
     >
       <div className="pt-0.5">

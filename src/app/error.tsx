@@ -16,7 +16,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-4 px-4">
       <h1 className="font-display text-2xl font-semibold">This page didn’t load</h1>
       <p className="text-muted-foreground">
-        The server had a problem fetching your opportunities. Try again; if it keeps happening, check the database connection.
+        The server had a problem loading this page. Try again; if it keeps happening, check the database connection.
       </p>
       <div>
         <Button

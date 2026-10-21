@@ -37,7 +37,9 @@ export async function login(_previousState: unknown, formData: FormData) {
   const parsed = loginSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { message: 'Invalid email or password format.' };
 
-  // ponytail: per-address limit in Postgres; a shared address (NAT) shares the budget.
+  // ponytail: per-address limit in Postgres; a shared address (NAT) shares the budget, parallel
+  // guesses can overshoot it slightly (check-then-insert), and x-forwarded-for is only trustworthy
+  // behind a proxy that sets it (Vercel does). Move to an atomic counter if that ever matters.
   const client = (await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
   const recent = await query<{ failures: string }>(
     `SELECT COUNT(*) AS failures FROM login_attempts
@@ -54,6 +56,7 @@ export async function login(_previousState: unknown, formData: FormData) {
     password: process.env.APP_USER_PASSWORD,
   })) {
     await query('INSERT INTO login_attempts (client) VALUES ($1)', [client]);
+    await query(`DELETE FROM login_attempts WHERE attempted_at < now() - interval '1 day'`);
     return { message: 'Email or password is incorrect.' };
   }
   await query(`DELETE FROM login_attempts WHERE client = $1 OR attempted_at < now() - interval '1 day'`, [client]);
@@ -97,7 +100,7 @@ export async function addOpportunity(input: unknown) {
 }
 
 export async function getOpportunitiesAction(
-  page = 1,
+  offset = 0,
   limit = 10,
   sortBy = 'created_at',
   sortOrder: 'ASC' | 'DESC' = 'DESC',
@@ -111,7 +114,7 @@ export async function getOpportunitiesAction(
   try {
     return {
       success: true as const,
-      ...await getOpportunities(page, limit, sortBy, sortOrder, searchQuery, status, category),
+      ...await getOpportunities(Math.max(0, Math.floor(offset)), Math.min(Math.max(1, limit), 50), sortBy, sortOrder, searchQuery, status, category),
     };
   } catch (error) {
     console.error('Error fetching opportunities:', error);

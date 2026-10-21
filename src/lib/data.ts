@@ -64,7 +64,7 @@ function mapSourceRow(row: Record<string, unknown>): OpportunitySource {
 }
 
 export async function getOpportunities(
-  page = 1,
+  offset = 0,
   limit = 10,
   sortBy = 'created_at',
   sortOrder: 'ASC' | 'DESC' = 'DESC',
@@ -72,7 +72,6 @@ export async function getOpportunities(
   status?: 'upcoming' | 'past',
   category?: OpportunityCategory,
 ): Promise<{ opportunities: Opportunity[]; total: number; hasMore: boolean }> {
-  const offset = (page - 1) * limit;
   const conditions: string[] = [];
   const parameters: unknown[] = [];
 
@@ -119,7 +118,7 @@ export async function getOpportunities(
   return {
     opportunities: result.rows.map(mapOpportunityRow),
     total,
-    hasMore: page * limit < total,
+    hasMore: offset + result.rows.length < total,
   };
 }
 

@@ -61,7 +61,7 @@ export function EditOpportunityDialog({ opportunity, open, onOpenChange, onSucce
       <DialogContent
         className="max-h-[92vh] overflow-y-auto sm:max-w-3xl"
         onInteractOutside={(event) => event.preventDefault()}
-        onEscapeKeyDown={(event) => { if (isSaving) event.preventDefault(); }}
+        onEscapeKeyDown={(event) => event.preventDefault()}
       >
         <DialogHeader>
           <DialogTitle>Edit opportunity</DialogTitle>

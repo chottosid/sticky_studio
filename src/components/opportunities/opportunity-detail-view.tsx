@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { format, parseISO } from 'date-fns';
 import { ArrowLeft, ExternalLink, Mail, Pencil, Trash2 } from 'lucide-react';
@@ -8,6 +8,7 @@ import type { Opportunity } from '@/lib/types';
 import { opportunityCategoryLabels } from '@/domain/opportunity/config';
 import { Button } from '@/components/ui/button';
 import { DeadlineMark } from './deadline-mark';
+import { LIST_RETURN_KEY } from '@/lib/list-params';
 import { EditOpportunityDialog } from './edit-opportunity-dialog';
 import { DeleteOpportunityDialog } from './delete-opportunity-dialog';
 
@@ -72,12 +73,18 @@ export default function OpportunityDetailView({ opportunity, today }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const router = useRouter();
+  const openedFromList = useRef(false);
 
-  const goBack = () => {
-    // Return to the filtered list the user came from; a fresh tab has nothing to go back to.
-    if (window.history.length > 1 && document.referrer.startsWith(window.location.origin)) router.back();
-    else router.push('/');
-  };
+  useEffect(() => {
+    try {
+      openedFromList.current = sessionStorage.getItem(LIST_RETURN_KEY) === opportunity.id;
+    } catch {
+      openedFromList.current = false;
+    }
+  }, [opportunity.id]);
+
+  // Back to the filtered list this was opened from; a shared link or new tab goes home instead.
+  const goBack = () => (openedFromList.current ? router.back() : router.push('/'));
 
   const place = [opportunity.organizationName, opportunity.location].filter(Boolean).join(', ');
   const shownFacts = facts(opportunity).filter((fact) => hasValue(fact.value));
@@ -196,7 +203,7 @@ export default function OpportunityDetailView({ opportunity, today }: Props) {
         opportunity={opportunity}
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        onSuccess={() => router.push('/')}
+        onSuccess={() => router.replace('/')}
       />
     </article>
   );

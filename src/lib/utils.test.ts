@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dateInTimezone, escapeHtml, escapeLike, isNumericId } from './utils';
+import { dateInTimezone, escapeHtml, escapeLike, isCalendarDate, isNumericId } from './utils';
 
 describe('dateInTimezone', () => {
   it('returns the calendar date in the given timezone', () => {
@@ -28,5 +28,15 @@ describe('isNumericId', () => {
     expect(isNumericId('abc')).toBe(false);
     expect(isNumericId('9999999999')).toBe(false);
     expect(isNumericId('')).toBe(false);
+  });
+});
+
+describe('isCalendarDate', () => {
+  it('rejects impossible months and days without throwing', () => {
+    expect(isCalendarDate('2026-13-01')).toBe(false);
+    expect(isCalendarDate('2026-00-10')).toBe(false);
+    expect(isCalendarDate('2026-02-32')).toBe(false);
+    expect(isCalendarDate('2026-02-30')).toBe(false);
+    expect(isCalendarDate('2028-02-29')).toBe(true);
   });
 });

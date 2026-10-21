@@ -14,10 +14,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const location = await getSourceLocation((await params).id);
   if (!location) return NextResponse.json({ message: 'Source not found.' }, { status: 404 });
 
+  // Only stored files: external URLs are linked directly, so this never redirects off-site.
+  if (!location.storagePath) return NextResponse.json({ message: 'Source not found.' }, { status: 404 });
   try {
-    const url = location.storagePath ? await signedSourceUrl(location.storagePath) : location.sourceUrl;
-    if (!url) return NextResponse.json({ message: 'Source not found.' }, { status: 404 });
-    return NextResponse.redirect(url);
+    return NextResponse.redirect(await signedSourceUrl(location.storagePath));
   } catch (error) {
     console.error('Could not open source:', error);
     return NextResponse.json({ message: 'The source could not be opened. Try again.' }, { status: 502 });

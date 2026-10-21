@@ -17,7 +17,6 @@ export interface FileData {
 
 type Props = {
   files: FileData[];
-  /** A state setter: updates are functional, so fast successive pastes never drop files. */
   onFilesChange: React.Dispatch<React.SetStateAction<FileData[]>>;
   disabled?: boolean;
 };
@@ -69,6 +68,9 @@ async function toFileData(file: File): Promise<FileData> {
 
 export function UnifiedImageInput({ files, onFilesChange, disabled = false }: Props) {
   const [isDragOver, setIsDragOver] = React.useState(false);
+  // Latest selection, updated synchronously so two quick pastes both see each other's files.
+  const filesRef = React.useRef(files);
+  filesRef.current = files;
   const inputId = React.useId();
   const { toast } = useToast();
 
@@ -79,22 +81,21 @@ export function UnifiedImageInput({ files, onFilesChange, disabled = false }: Pr
       return;
     }
     const processed = await Promise.all(valid.map(toFileData));
-    onFilesChange((current) => {
-      const next = [...current, ...processed];
-      if (next.length > MAX_FILES) {
-        toast({ variant: 'destructive', title: `Add up to ${MAX_FILES} files at a time` });
-        return current;
-      }
-      if (next.reduce((total, file) => total + file.size, 0) > MAX_TOTAL_BYTES) {
-        toast({
-          variant: 'destructive',
-          title: 'These files are too large together',
-          description: 'Keep the total under 3 MB. Images are compressed automatically; PDFs count at full size.',
-        });
-        return current;
-      }
-      return next;
-    });
+    const next = [...filesRef.current, ...processed];
+    if (next.length > MAX_FILES) {
+      toast({ variant: 'destructive', title: `Add up to ${MAX_FILES} files at a time` });
+      return;
+    }
+    if (next.reduce((total, file) => total + file.size, 0) > MAX_TOTAL_BYTES) {
+      toast({
+        variant: 'destructive',
+        title: 'These files are too large together',
+        description: 'Keep the total under 3 MB. Images are compressed automatically; PDFs count at full size.',
+      });
+      return;
+    }
+    filesRef.current = next;
+    onFilesChange(next);
   }, [onFilesChange, toast]);
 
   // Ctrl+V anywhere in the dialog, except inside a text field.

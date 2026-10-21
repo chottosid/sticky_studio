@@ -16,7 +16,7 @@ export default async function Home({ searchParams }: Props) {
   const params = parseListParams(await searchParams);
   const { sortBy, sortOrder } = listOrder(params);
   const [{ opportunities, total }, inbox] = await Promise.all([
-    getOpportunities(1, LIST_PAGE_SIZE, sortBy, sortOrder, params.q || undefined, params.status, params.category),
+    getOpportunities(0, LIST_PAGE_SIZE, sortBy, sortOrder, params.q || undefined, params.status, params.category),
     getInboxItems(),
   ]);
 
@@ -26,7 +26,8 @@ export default async function Home({ searchParams }: Props) {
       <main className="mx-auto max-w-5xl space-y-10 px-4 pb-16 pt-8 sm:px-6">
         <TelegramInbox items={inbox} />
         <OpportunityLedger
-          key={listHref(params)}
+          // Not keyed on the search text: typing must not remount the search box.
+          key={listHref({ ...params, q: '' })}
           params={params}
           initialItems={opportunities}
           total={total}

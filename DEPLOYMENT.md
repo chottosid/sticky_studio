@@ -100,3 +100,7 @@ New opportunities appear in the **Telegram inbox** on the home page; nothing is 
 - Run `npm run db:migrate` before deploying (adds `005_telegram_bundles.sql`).
 - Messages one person posts within 60 s of each other (a screenshot, then its text) are extracted together as one inbox item. The webhook's background run waits out that window, so `/api/telegram/webhook` uses `maxDuration = 300`, which needs Vercel Fluid compute.
 - To import a group's earlier messages: in Telegram Desktop use **Export chat history** (HTML, with photos), add the bot to that group, then run `npm run telegram:import -- <export folder>` from a trusted machine with production env vars. It is safe to re-run; already imported posts are skipped and failed ones are retried.
+
+## Release: shared sources, login limit, redesign
+
+Run `npm run db:migrate` **before** deploying this release (adds `006_shared_sources_and_login_attempts.sql`). Sign-in reads the new `login_attempts` table, and the dropped unique index is what lets one post save several opportunities.
