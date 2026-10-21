@@ -9,23 +9,16 @@ import {
   OpportunityInputSchema,
   type OpportunityCategory,
 } from '@/domain/opportunity/schema';
-import { deleteOpportunity, getOpportunities, saveOpportunity, updateOpportunity } from '@/lib/data';
-import { sendNewOpportunityEmail, sendTestEmail } from '@/lib/email';
+import { deleteOpportunity, getOpportunities, updateOpportunity } from '@/lib/data';
+import { sendTestEmail } from '@/lib/email';
 import {
   createSessionToken,
   SESSION_COOKIE_NAME,
   SESSION_MAX_AGE_SECONDS,
   verifySessionToken,
 } from '@/lib/auth/session';
-import {
-  removeStoredSources,
-  uploadOpportunitySources,
-} from '@/lib/source-storage';
-import {
-  createDuplicateConfirmationToken,
-  findDuplicateMatches,
-  verifyDuplicateConfirmationToken,
-} from '@/lib/duplicates';
+import { removeStoredSources } from '@/lib/source-storage';
+import { saveOpportunityBatch } from '@/lib/save-opportunities';
 
 export async function isAuthenticated() {
   const cookieStore = await cookies();
@@ -85,66 +78,7 @@ export async function addOpportunity(input: unknown) {
     };
   }
 
-  const { opportunities, sources, discoveredSourceUrls } = parsed.data;
-  const duplicateInput = { opportunities, sources, discoveredSourceUrls };
-  let uploadedSources: Awaited<ReturnType<typeof uploadOpportunitySources>> = [];
-  let savedCount = 0;
-  try {
-    const confirmed = await verifyDuplicateConfirmationToken(
-      duplicateInput,
-      parsed.data.duplicateConfirmationToken,
-    );
-    if (!confirmed) {
-      const duplicateMatches = [];
-      for (const opportunity of opportunities) {
-        const matches = await findDuplicateMatches({ opportunity, sources, discoveredSourceUrls });
-        duplicateMatches.push(...matches.map((match) => ({ ...match, draftName: opportunity.name })));
-      }
-      if (duplicateMatches.length) {
-        return {
-          success: false as const,
-          code: 'DUPLICATE_WARNING' as const,
-          message: 'Possible duplicate opportunities found.',
-          duplicateMatches,
-          duplicateConfirmationToken: await createDuplicateConfirmationToken(duplicateInput, duplicateMatches),
-        };
-      }
-    }
-
-    // Upload once; every opportunity in the batch references the same
-    // content-addressed objects (deduped in storage, see source-storage.ts).
-    uploadedSources = await uploadOpportunitySources(sources);
-    for (const opportunity of opportunities) {
-      try {
-        const saved = await saveOpportunity(
-          opportunity,
-          uploadedSources,
-          Array.from(new Set(discoveredSourceUrls)),
-        );
-        savedCount += 1;
-        await sendNewOpportunityEmail(saved);
-      } catch (error) {
-        // Only remove when nothing was saved — earlier saves still reference the objects.
-        if (savedCount === 0) {
-          await removeStoredSources(uploadedSources.map((source) => source.storagePath));
-        }
-        throw error;
-      }
-    }
-    revalidatePath('/');
-    return {
-      success: true as const,
-      message: savedCount === 1
-        ? `Successfully added "${opportunities[0].name}"!`
-        : `Successfully added ${savedCount} opportunities!`,
-    };
-  } catch (error) {
-    console.error('Could not save opportunity:', error);
-    return {
-      success: false as const,
-      message: `${savedCount ? `Saved ${savedCount} before the failure. ` : ''}${error instanceof Error ? error.message : 'Failed to save the opportunity.'}`,
-    };
-  }
+  return saveOpportunityBatch(parsed.data);
 }
 
 export async function getOpportunitiesAction(
