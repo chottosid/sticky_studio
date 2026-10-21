@@ -4,7 +4,7 @@ export const opportunityCategoryLabels: Record<OpportunityCategory, string> = {
   job: 'Job',
   internship: 'Internship',
   contest: 'Contest',
-  'higher-study': 'Higher Study',
+  'higher-study': 'Higher study',
 };
 
 export const opportunityCategoryDescriptions: Record<OpportunityCategory, string> = {

@@ -69,9 +69,7 @@ export async function saveOpportunityBatch(input: SaveOpportunityBatchInput) {
     revalidatePath('/');
     return {
       success: true as const,
-      message: savedCount === 1
-        ? `Successfully added "${opportunities[0].name}"!`
-        : `Successfully added ${savedCount} opportunities!`,
+      message: savedCount === 1 ? `Saved “${opportunities[0].name}”` : `Saved ${savedCount} opportunities`,
     };
   } catch (error) {
     console.error('Could not save opportunity:', error);

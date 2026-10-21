@@ -126,7 +126,7 @@ export async function deleteOpportunityAction(id: string) {
     if (!result.deleted) return { success: false as const, message: 'Opportunity not found' };
     await removeStoredSources(result.storagePaths);
     revalidatePath('/');
-    return { success: true as const, message: 'Opportunity deleted successfully' };
+    return { success: true as const, message: 'Opportunity deleted' };
   } catch (error) {
     console.error('Error deleting opportunity:', error);
     return { success: false as const, message: 'Failed to delete opportunity' };
@@ -152,7 +152,7 @@ export async function updateOpportunityAction(input: unknown) {
     revalidatePath(`/opportunity/${parsed.data.id}`);
     return {
       success: true as const,
-      message: `Successfully updated "${opportunity.name}"!`,
+      message: `Saved changes to “${opportunity.name}”`,
       opportunity,
     };
   } catch (error) {

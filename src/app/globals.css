@@ -3,66 +3,56 @@
 @tailwind utilities;
 
 @layer base {
+  /* Deadline ledger: cool paper, ink, pen-blue actions, highlighter only for "due within a week". */
   :root {
-    --background: 240 10% 98%;
-    --foreground: 222.2 84% 4.9%;
-
+    --background: 220 14% 97%;
+    --foreground: 211 28% 13%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-
+    --card-foreground: 211 28% 13%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-
-    --primary: 262 83% 58%;
-    --primary-foreground: 0 0% 98%;
-
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 210 40% 9.8%;
-
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-
-    --accent: 142 76% 36%;
-    --accent-foreground: 0 0% 98%;
-
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 262 83% 58%;
-
-    --radius: 0.75rem;
+    --popover-foreground: 211 28% 13%;
+    --primary: 228 69% 46%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 93%;
+    --secondary-foreground: 211 28% 13%;
+    --muted: 220 14% 94%;
+    --muted-foreground: 215 11% 41%;
+    --accent: 220 16% 92%;
+    --accent-foreground: 211 28% 13%;
+    --destructive: 10 76% 43%;
+    --destructive-foreground: 0 0% 100%;
+    --highlight: 51 100% 68%;
+    --highlight-foreground: 211 28% 13%;
+    --border: 218 16% 90%;
+    --input: 218 16% 86%;
+    --ring: 228 69% 46%;
+    --radius: 0.5rem;
   }
 
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-
-    --primary: 262 83% 68%;
-    --primary-foreground: 0 0% 98%;
-
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-
-    --accent: 142 76% 46%;
-    --accent-foreground: 0 0% 98%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 262 83% 68%;
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: 215 22% 10%;
+      --foreground: 216 20% 92%;
+      --card: 215 20% 13%;
+      --card-foreground: 216 20% 92%;
+      --popover: 215 20% 13%;
+      --popover-foreground: 216 20% 92%;
+      --primary: 228 90% 76%;
+      --primary-foreground: 215 22% 10%;
+      --secondary: 215 16% 18%;
+      --secondary-foreground: 216 20% 92%;
+      --muted: 215 16% 17%;
+      --muted-foreground: 216 10% 64%;
+      --accent: 215 16% 20%;
+      --accent-foreground: 216 20% 92%;
+      --destructive: 10 80% 62%;
+      --destructive-foreground: 215 22% 10%;
+      --highlight: 50 85% 55%;
+      --highlight-foreground: 215 22% 10%;
+      --border: 215 15% 22%;
+      --input: 215 15% 26%;
+      --ring: 228 90% 76%;
+    }
   }
 }
 

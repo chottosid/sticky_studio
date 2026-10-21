@@ -37,16 +37,13 @@ export function DeleteOpportunityDialog({
     try {
       const result = await deleteOpportunityAction(opportunity.id);
       if (result.success) {
-        toast({
-          title: 'Success!',
-          description: result.message,
-        });
+        toast({ title: result.message });
         onOpenChange(false);
         onSuccess?.();
       } else {
         toast({
           variant: 'destructive',
-          title: 'An error occurred',
+          title: 'Could not delete',
           description: result.message,
         });
       }
@@ -54,8 +51,8 @@ export function DeleteOpportunityDialog({
       console.error('Delete failed:', error);
       toast({
         variant: 'destructive',
-        title: 'Delete Failed',
-        description: 'Could not delete the opportunity.',
+        title: 'Could not delete',
+        description: 'Check your connection and try again.',
       });
     } finally {
       setIsDeleting(false);
@@ -66,23 +63,26 @@ export function DeleteOpportunityDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+          <AlertDialogTitle>Delete this opportunity?</AlertDialogTitle>
           <AlertDialogDescription>
-            This action cannot be undone. This will permanently delete the opportunity{' '}
-            <strong>{`"${opportunity.name}"`}</strong> and remove all associated data.
+            <strong>{opportunity.name}</strong> and its saved files will be removed. This can’t be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            onClick={handleDelete}
+            onClick={(event) => {
+              // Keep the dialog open (and the spinner visible) until the delete finishes.
+              event.preventDefault();
+              void handleDelete();
+            }}
             disabled={isDeleting}
-            className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
             {isDeleting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Deleting...
+                Deleting…
               </>
             ) : (
               <>

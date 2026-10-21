@@ -3,143 +3,201 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { format, parseISO } from 'date-fns';
-import { ArrowLeft, CalendarDays, Edit, ExternalLink, Trash2 } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Mail, Pencil, Trash2 } from 'lucide-react';
 import type { Opportunity } from '@/lib/types';
 import { opportunityCategoryLabels } from '@/domain/opportunity/config';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useDeadlineStatus } from '@/hooks/use-deadline-status';
+import { DeadlineMark } from './deadline-mark';
 import { EditOpportunityDialog } from './edit-opportunity-dialog';
 import { DeleteOpportunityDialog } from './delete-opportunity-dialog';
 
-type Props = { opportunity: Opportunity };
+type Props = { opportunity: Opportunity; today: string };
 
-function Field({ label, value }: { label: string; value: string | string[] | null | undefined }) {
-  if (!value || (Array.isArray(value) && value.length === 0)) return null;
-  return (
-    <div>
-      <dt className="text-sm font-medium text-muted-foreground">{label}</dt>
-      <dd className="mt-1 whitespace-pre-wrap">{Array.isArray(value) ? value.join(', ') : value}</dd>
-    </div>
-  );
+type Fact = { label: string; value: string | string[] | null | undefined };
+
+function facts(opportunity: Opportunity): Fact[] {
+  const common: Fact[] = [
+    { label: 'Organization type', value: opportunity.organizationType },
+    { label: 'Eligibility', value: opportunity.eligibility },
+    { label: 'Requirements', value: opportunity.requirements },
+  ];
+  if (opportunity.category === 'higher-study') {
+    const a = opportunity.attributes;
+    return [
+      { label: 'Program or position', value: a.programName },
+      { label: 'Degree', value: a.degreeLevel },
+      { label: 'Department', value: a.department },
+      { label: 'Professors', value: a.professorNames },
+      { label: 'Lab or group', value: a.labName },
+      { label: 'Research areas', value: a.researchAreas },
+      { label: 'Funding', value: a.funding },
+      { label: 'Starts', value: a.startTerm },
+      ...common,
+    ];
+  }
+  if (opportunity.category === 'contest') {
+    const a = opportunity.attributes;
+    return [
+      { label: 'Theme', value: a.theme },
+      { label: 'Prize', value: a.prize },
+      { label: 'Event date', value: a.eventDate },
+      ...common,
+    ];
+  }
+  const a = opportunity.attributes;
+  return [
+    { label: 'Role', value: a.roleTitle },
+    { label: 'Employment', value: a.employmentType },
+    { label: 'Workplace', value: a.workplaceMode },
+    { label: 'Compensation', value: a.compensation },
+    { label: 'Duration', value: opportunity.category === 'internship' ? a.duration : null },
+    { label: 'Skills', value: a.skills },
+    ...common,
+  ];
 }
 
-export default function OpportunityDetailView({ opportunity }: Props) {
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+const hasValue = (value: Fact['value']) => (Array.isArray(value) ? value.length > 0 : Boolean(value));
+
+/** "lnkd.in/eC7wE9vd" rather than the full URL; host alone can't tell two links apart. */
+function shortUrl(url: string): string {
+  try {
+    const { hostname, pathname } = new URL(url);
+    return `${hostname.replace(/^www\./, '')}${pathname === '/' ? '' : pathname}`;
+  } catch {
+    return url;
+  }
+}
+
+export default function OpportunityDetailView({ opportunity, today }: Props) {
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const router = useRouter();
-  const { isPast } = useDeadlineStatus(opportunity.deadline);
-  const deadline = opportunity.deadline ? format(parseISO(opportunity.deadline), 'MMMM do, yyyy') : null;
-  const sourceLinks = opportunity.sources.length
+
+  const goBack = () => {
+    // Return to the filtered list the user came from; a fresh tab has nothing to go back to.
+    if (window.history.length > 1 && document.referrer.startsWith(window.location.origin)) router.back();
+    else router.push('/');
+  };
+
+  const place = [opportunity.organizationName, opportunity.location].filter(Boolean).join(', ');
+  const shownFacts = facts(opportunity).filter((fact) => hasValue(fact.value));
+  const sources = opportunity.sources.length
     ? opportunity.sources.map((source) => ({
       id: source.id,
-      label: source.originalName || source.sourceUrl || 'Source',
-      url: source.signedUrl || source.sourceUrl,
+      label: source.storagePath ? source.originalName || 'Saved file' : shortUrl(source.sourceUrl || ''),
+      href: source.storagePath ? `/api/sources/${source.id}` : source.sourceUrl,
     }))
     : opportunity.documentUri
-      ? [{ id: 'legacy', label: 'Legacy source document', url: opportunity.documentUri }]
+      ? [{ id: 'legacy', label: 'Original document', href: opportunity.documentUri }]
       : [];
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <Button variant="outline" onClick={() => router.back()}><ArrowLeft className="mr-2 h-4 w-4" />Back</Button>
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-            <div>
-              <CardTitle className="text-3xl">{opportunity.name}</CardTitle>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Badge variant="outline">{opportunityCategoryLabels[opportunity.category]}</Badge>
-                <Badge variant={isPast ? 'destructive' : 'secondary'}>
-                  <CalendarDays className="mr-1 h-3.5 w-3.5" />
-                  {deadline ? `${isPast ? 'Closed' : 'Deadline'}: ${deadline}` : 'No deadline'}
-                </Badge>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setEditDialogOpen(true)}><Edit className="mr-2 h-4 w-4" />Edit</Button>
-              <Button variant="outline" size="sm" onClick={() => setDeleteDialogOpen(true)}><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-8">
-          <section>
-            <h2 className="mb-4 text-xl font-semibold">Key information</h2>
-            <dl className="grid gap-5 md:grid-cols-2">
-              <Field label="Organization" value={opportunity.organizationName} />
-              <Field label="Organization type" value={opportunity.organizationType} />
-              <Field label="Location" value={opportunity.location} />
-              <Field label="Contact" value={opportunity.contactEmail} />
-              <Field label="Application URL" value={opportunity.applicationUrl} />
-              {opportunity.category === 'higher-study' && (
-                <>
-                  <Field label="Program / position" value={opportunity.attributes.programName} />
-                  <Field label="Degree level" value={opportunity.attributes.degreeLevel} />
-                  <Field label="Department" value={opportunity.attributes.department} />
-                  <Field label="Professors" value={opportunity.attributes.professorNames} />
-                  <Field label="Lab / research group" value={opportunity.attributes.labName} />
-                  <Field label="Research areas" value={opportunity.attributes.researchAreas} />
-                  <Field label="Funding / stipend" value={opportunity.attributes.funding} />
-                  <Field label="Start term" value={opportunity.attributes.startTerm} />
-                </>
-              )}
-              {(opportunity.category === 'job' || opportunity.category === 'internship') && (
-                <>
-                  <Field label="Role" value={opportunity.attributes.roleTitle} />
-                  <Field label="Employment type" value={opportunity.attributes.employmentType} />
-                  <Field label="Workplace mode" value={opportunity.attributes.workplaceMode} />
-                  <Field label="Compensation" value={opportunity.attributes.compensation} />
-                  <Field label="Skills" value={opportunity.attributes.skills} />
-                  {opportunity.category === 'internship' && <Field label="Duration" value={opportunity.attributes.duration} />}
-                </>
-              )}
-              {opportunity.category === 'contest' && (
-                <>
-                  <Field label="Theme" value={opportunity.attributes.theme} />
-                  <Field label="Prize" value={opportunity.attributes.prize} />
-                  <Field label="Event date" value={opportunity.attributes.eventDate} />
-                </>
-              )}
-              <Field label="Eligibility" value={opportunity.eligibility} />
-              <Field label="Requirements" value={opportunity.requirements} />
-            </dl>
-          </section>
+    <article className="mx-auto max-w-3xl">
+      <Button variant="ghost" size="sm" onClick={goBack} className="-ml-3 text-muted-foreground">
+        <ArrowLeft aria-hidden />
+        All opportunities
+      </Button>
 
-          {opportunity.details && (
-            <section>
-              <h2 className="mb-2 text-xl font-semibold">Summary / notes</h2>
-              <p className="whitespace-pre-wrap text-foreground/80">{opportunity.details}</p>
-            </section>
+      <header className="mt-6 space-y-3">
+        <p className="text-sm text-muted-foreground">{opportunityCategoryLabels[opportunity.category]}</p>
+        <h1 className="font-display text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">{opportunity.name}</h1>
+        {place && <p className="text-lg text-muted-foreground">{place}</p>}
+      </header>
+
+      <div className="mt-8 flex flex-wrap items-end justify-between gap-6 border-y py-5">
+        <div className="flex items-end gap-4">
+          <DeadlineMark deadline={opportunity.deadline} today={today} size="lg" />
+          <p className="pb-1 text-sm text-muted-foreground">
+            {opportunity.deadline
+              ? `Deadline ${format(parseISO(opportunity.deadline), 'EEEE, d MMMM yyyy')}`
+              : 'No deadline given'}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {opportunity.applicationUrl && (
+            <Button asChild>
+              <a href={opportunity.applicationUrl} target="_blank" rel="noreferrer">
+                Apply <ExternalLink aria-hidden />
+              </a>
+            </Button>
           )}
+          {opportunity.contactEmail && (
+            <Button asChild variant="outline">
+              <a href={`mailto:${opportunity.contactEmail}`}>
+                <Mail aria-hidden /> {opportunity.contactEmail}
+              </a>
+            </Button>
+          )}
+        </div>
+      </div>
 
-          <section>
-            <h2 className="mb-3 text-xl font-semibold">Sources</h2>
-            {sourceLinks.length ? (
-              <div className="flex flex-wrap gap-2">
-                {sourceLinks.map((source) => source.url && (
-                  <Button key={source.id} variant="outline" asChild>
-                    <a href={source.url} target="_blank" rel="noreferrer"><ExternalLink className="mr-2 h-4 w-4" />{source.label}</a>
-                  </Button>
-                ))}
-              </div>
-            ) : <p className="text-sm text-muted-foreground">No source document is attached.</p>}
-          </section>
-        </CardContent>
-      </Card>
+      {opportunity.details && (
+        <p className="mt-8 max-w-prose whitespace-pre-wrap text-[1.0625rem] leading-relaxed">{opportunity.details}</p>
+      )}
+
+      {shownFacts.length > 0 && (
+        <dl className="mt-10 grid gap-x-10 gap-y-6 sm:grid-cols-2">
+          {shownFacts.map((fact) => (
+            <div key={fact.label} className={Array.isArray(fact.value) || (fact.value?.length ?? 0) > 120 ? 'sm:col-span-2' : undefined}>
+              <dt className="text-sm text-muted-foreground">{fact.label}</dt>
+              <dd className="mt-1">
+                {Array.isArray(fact.value) ? (
+                  <ul className="list-disc space-y-1 pl-5">
+                    {fact.value.map((entry) => <li key={entry}>{entry}</li>)}
+                  </ul>
+                ) : (
+                  <span className="whitespace-pre-wrap">{fact.value}</span>
+                )}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      <section className="mt-10" aria-labelledby="sources-heading">
+        <h2 id="sources-heading" className="text-sm text-muted-foreground">Sources</h2>
+        {sources.length ? (
+          <ul className="mt-2 space-y-1">
+            {sources.map((source) => source.href && (
+              <li key={source.id} className="min-w-0">
+                <a
+                  href={source.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex max-w-full items-center gap-2 text-primary underline-offset-4 hover:underline"
+                >
+                  <ExternalLink className="h-4 w-4 shrink-0" aria-hidden />
+                  <span className="truncate">{source.label}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-sm">No source is attached.</p>
+        )}
+      </section>
+
+      <footer className="mt-12 flex gap-2 border-t pt-6">
+        <Button variant="outline" onClick={() => setEditOpen(true)}>
+          <Pencil aria-hidden /> Edit
+        </Button>
+        <Button variant="ghost" onClick={() => setDeleteOpen(true)} className="text-destructive hover:bg-destructive/10 hover:text-destructive">
+          <Trash2 aria-hidden /> Delete
+        </Button>
+      </footer>
 
       <EditOpportunityDialog
         opportunity={opportunity}
-        open={editDialogOpen}
-        onOpenChange={setEditDialogOpen}
+        open={editOpen}
+        onOpenChange={setEditOpen}
         onSuccess={() => router.refresh()}
       />
       <DeleteOpportunityDialog
         opportunity={opportunity}
-        open={deleteDialogOpen}
-        onOpenChange={setDeleteDialogOpen}
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
         onSuccess={() => router.push('/')}
       />
-    </div>
+    </article>
   );
 }

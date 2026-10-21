@@ -1,10 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import Image from 'next/image';
+import { ClipboardPaste, FileText, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Upload, Image as ImageIcon, X, ClipboardPaste } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
@@ -17,399 +15,186 @@ export interface FileData {
   size: number;
 }
 
-interface UnifiedImageInputProps {
-  onFilesSelect: (files: FileData[]) => void;
-  onClear?: () => void;
-  selectedFiles?: FileData[];
-  className?: string;
+type Props = {
+  files: FileData[];
+  /** A state setter: updates are functional, so fast successive pastes never drop files. */
+  onFilesChange: React.Dispatch<React.SetStateAction<FileData[]>>;
   disabled?: boolean;
-  multiple?: boolean;
+};
+
+// ponytail: Vercel caps server-action bodies at 4.5 MB and base64 adds ~33%, so combined
+// post-compression bytes are capped at 3 MB. One extraction takes at most 10 sources.
+const MAX_TOTAL_BYTES = 3 * 1024 * 1024;
+const MAX_FILES = 10;
+
+/** Downscales large screenshots to JPEG; OCR-grade quality at a fraction of the size. */
+async function compressImage(file: File): Promise<File | null> {
+  if (!file.type.startsWith('image/') || file.type === 'image/gif') return null;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 2000 / Math.max(bitmap.width, bitmap.height));
+    if (scale === 1 && file.size < 1_500_000) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    const context = canvas.getContext('2d');
+    if (!context) return null;
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+    if (!blob || blob.size >= file.size) return null;
+    return new File([blob], `${file.name.replace(/\.[^.]+$/, '')}.jpg`, { type: 'image/jpeg' });
+  } catch {
+    return null;
+  }
 }
 
-export function UnifiedImageInput({
-  onFilesSelect,
-  onClear,
-  selectedFiles = [],
-  className,
-  disabled = false,
-  multiple = true,
-}: UnifiedImageInputProps) {
+async function toFileData(file: File): Promise<FileData> {
+  const finalFile = (await compressImage(file)) ?? file;
+  const dataUri = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error('Could not read the file.'));
+    reader.readAsDataURL(finalFile);
+  });
+  return {
+    id: crypto.randomUUID(),
+    name: finalFile.name,
+    dataUri,
+    type: finalFile.type.startsWith('image/') ? 'image' : 'pdf',
+    mimeType: finalFile.type,
+    size: finalFile.size,
+  };
+}
+
+export function UnifiedImageInput({ files, onFilesChange, disabled = false }: Props) {
   const [isDragOver, setIsDragOver] = React.useState(false);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const inputId = React.useId();
   const { toast } = useToast();
 
-  const processFile = React.useCallback((file: File): Promise<FileData> => {
-    // ponytail: Vercel caps server-action bodies at 4.5MB and base64 adds ~33%,
-    // so images over ~3MB must be downscaled before upload. JPEG at quality 0.85
-    // keeps OCR-grade quality at a fraction of the size.
-    async function compressImage(file: File): Promise<File | null> {
-      if (!file.type.startsWith('image/') || file.type === 'image/gif') return null;
-      try {
-        const bitmap = await createImageBitmap(file);
-        const maxDim = 2000;
-        const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
-        if (scale === 1 && file.size < 1_500_000) return null; // already small enough
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.round(bitmap.width * scale);
-        canvas.height = Math.round(bitmap.height * scale);
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return null;
-        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-        bitmap.close();
-        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
-        if (!blob || blob.size >= file.size) return null; // never grow the file
-        return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
-      } catch {
-        return null; // exotic format: send as-is
-      }
-    }
-
-    return (async () => {
-      const finalFile = (await compressImage(file)) ?? file;
-      const dataUri: string = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (event) => resolve(event.target?.result as string);
-        reader.onerror = () => reject(new Error('Could not read the file.'));
-        reader.readAsDataURL(finalFile);
-      });
-      const fileType: 'image' | 'pdf' = finalFile.type.startsWith('image/') ? 'image' : 'pdf';
-      return {
-        id: crypto.randomUUID(),
-        name: finalFile.name,
-        dataUri,
-        type: fileType,
-        mimeType: finalFile.type,
-        size: finalFile.size,
-      };
-    })();
-  }, []);
-
-  const processFiles = React.useCallback(async (files: File[]) => {
-    const validFiles = files.filter(
-      file => file.type.startsWith('image/') || file.type === 'application/pdf'
-    );
-
-    if (validFiles.length === 0) {
-      toast({
-        variant: 'destructive',
-        title: 'Invalid File Type',
-        description: 'Please upload image or PDF files only.',
-      });
+  const addFiles = React.useCallback(async (incoming: File[]) => {
+    const valid = incoming.filter((file) => file.type.startsWith('image/') || file.type === 'application/pdf');
+    if (valid.length === 0) {
+      toast({ variant: 'destructive', title: 'Use an image or a PDF', description: 'Other file types can’t be read.' });
       return;
     }
-
-    if (!multiple && validFiles.length > 1) {
-      toast({
-        title: 'Single File Only',
-        description: 'Only one file can be uploaded at a time.',
-      });
-    }
-
-    const filesToProcess = multiple ? validFiles : [validFiles[0]];
-    // Compress first: a 5MB screenshot may shrink to ~300KB, so cap after.
-    const processedFiles = await Promise.all(filesToProcess.map(processFile));
-
-    // ponytail: Vercel hard-caps server-action request bodies at 4.5MB;
-    // base64 inflates ~33%, so cap combined post-compression bytes at 3MB.
-    const totalSize = [...selectedFiles, ...processedFiles].reduce((total, f) => total + f.size, 0);
-    if (totalSize > 3 * 1024 * 1024) {
-      toast({
-        variant: 'destructive',
-        title: 'Files Too Large',
-        description: 'The combined file size must be 3 MB or less (images are compressed automatically). PDFs count toward the limit at full size.',
-      });
-      return;
-    }
-
-    onFilesSelect(multiple ? [...selectedFiles, ...processedFiles] : processedFiles);
-  }, [multiple, onFilesSelect, processFile, selectedFiles, toast]);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length > 0) {
-      processFiles(files);
-    }
-    // Reset input so same file can be selected again
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    if (!disabled) {
-      setIsDragOver(true);
-    }
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-
-    if (disabled) return;
-
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      processFiles(files);
-    }
-  };
-
-  const handleUploadClick = () => {
-    if (disabled) return;
-    const input = fileInputRef.current;
-    if (!input) return;
-
-    try {
-      // showPicker() requires user activation, may fail in some React contexts
-      const picker = (input as HTMLInputElement & { showPicker?: () => void }).showPicker;
-      if (typeof picker === 'function') {
-        picker.call(input);
-        return;
+    const processed = await Promise.all(valid.map(toFileData));
+    onFilesChange((current) => {
+      const next = [...current, ...processed];
+      if (next.length > MAX_FILES) {
+        toast({ variant: 'destructive', title: `Add up to ${MAX_FILES} files at a time` });
+        return current;
       }
-    } catch {
-      // Fall through to click() if showPicker fails
-    }
-
-    input.click();
-  };
-
-  const handleRemoveFile = (index: number) => {
-    const newFiles = selectedFiles.filter((_, i) => i !== index);
-    onFilesSelect(newFiles);
-  };
-
-  const handleClear = () => {
-    if (onClear) {
-      onClear();
-    }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  // Handle paste event (document-level so Ctrl+V works without focusing the drop zone)
-  const handlePaste = React.useCallback((e: ClipboardEvent) => {
-    if (disabled) return;
-    // Don't hijack paste aimed at an editable field (e.g. the Paste-text tab)
-    const target = e.target as HTMLElement | null;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
-
-    const items = Array.from(e.clipboardData?.items || []);
-    const imageItems = items.filter(item => item.type.startsWith('image/'));
-
-    if (imageItems.length > 0) {
-      e.preventDefault();
-      const files = imageItems
-        .map(item => item.getAsFile())
-        .filter((file): file is File => file !== null);
-
-      if (files.length > 0) {
-        processFiles(files);
-        toast({
-          title: 'Image(s) Pasted!',
-          description: `${files.length} image(s) pasted from clipboard.`,
-        });
-      }
-    }
-  }, [disabled, processFiles, toast]);
-
-  React.useEffect(() => {
-    document.addEventListener('paste', handlePaste);
-    return () => document.removeEventListener('paste', handlePaste);
-  }, [handlePaste]);
-
-  const handleManualPaste = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (disabled) return;
-
-    try {
-      const items = await navigator.clipboard.read();
-      const files: File[] = [];
-
-      for (const item of items) {
-        const imageType = item.types.find(type => type.startsWith('image/'));
-        if (imageType) {
-          const blob = await item.getType(imageType);
-          const file = new File([blob], `pasted-image-${Date.now()}.png`, { type: imageType });
-          files.push(file);
-        }
-      }
-
-      if (files.length > 0) {
-        processFiles(files);
-        toast({
-          title: 'Image(s) Pasted!',
-          description: `${files.length} image(s) pasted from clipboard.`,
-        });
-      } else {
+      if (next.reduce((total, file) => total + file.size, 0) > MAX_TOTAL_BYTES) {
         toast({
           variant: 'destructive',
-          title: 'No Images Found',
-          description: 'No images were found in your clipboard.',
+          title: 'These files are too large together',
+          description: 'Keep the total under 3 MB. Images are compressed automatically; PDFs count at full size.',
         });
+        return current;
       }
-    } catch (err) {
-      console.error('Failed to read clipboard:', err);
-      toast({
-        variant: 'destructive',
-        title: 'Paste Failed',
-        description: 'Unable to access clipboard. Please try Ctrl+V instead.',
-      });
+      return next;
+    });
+  }, [onFilesChange, toast]);
+
+  // Ctrl+V anywhere in the dialog, except inside a text field.
+  React.useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      if (disabled) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      const pasted = Array.from(event.clipboardData?.items ?? [])
+        .filter((item) => item.type.startsWith('image/'))
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => file !== null);
+      if (pasted.length) {
+        event.preventDefault();
+        void addFiles(pasted);
+      }
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [addFiles, disabled]);
+
+  const pasteFromClipboard = async () => {
+    try {
+      const pasted: File[] = [];
+      for (const item of await navigator.clipboard.read()) {
+        const type = item.types.find((entry) => entry.startsWith('image/'));
+        if (type) pasted.push(new File([await item.getType(type)], `pasted-${Date.now()}.png`, { type }));
+      }
+      if (pasted.length) await addFiles(pasted);
+      else toast({ title: 'No image on the clipboard', description: 'Copy a screenshot first, or press Ctrl+V.' });
+    } catch {
+      toast({ variant: 'destructive', title: 'Clipboard not available', description: 'Press Ctrl+V instead.' });
     }
   };
 
   return (
-    <div className={cn('w-full', className)}>
-      <Label htmlFor="unified-file-input">
-        Document{multiple ? 's' : ''} (PDF or Image{multiple ? 's' : ''})
-      </Label>
-
-      {/* Hidden file input */}
+    <div className="space-y-3">
       <input
-        ref={fileInputRef}
-        id="unified-file-input"
+        id={inputId}
         type="file"
-        className="sr-only"
-        onChange={handleFileChange}
         accept="application/pdf,image/*"
-        multiple={multiple}
+        multiple
         disabled={disabled}
+        className="peer sr-only"
+        onChange={(event) => {
+          void addFiles(Array.from(event.target.files ?? []));
+          event.target.value = '';
+        }}
       />
-
-      {/* Main drop zone */}
-      <div
+      <label
+        htmlFor={inputId}
+        onDragOver={(event) => { event.preventDefault(); if (!disabled) setIsDragOver(true); }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={(event) => {
+          event.preventDefault();
+          setIsDragOver(false);
+          if (!disabled) void addFiles(Array.from(event.dataTransfer.files));
+        }}
         className={cn(
-          "mt-2 flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg transition-all duration-200 cursor-pointer",
-          isDragOver
-            ? "border-primary bg-primary/10 scale-105"
-            : "border-primary/20 bg-gradient-to-br from-primary/5 to-accent/5 hover:border-primary/40",
-          disabled && "opacity-50 cursor-not-allowed",
-          selectedFiles.length > 0 && "border-green-300 bg-green-50"
+          'flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed px-6 py-8 text-center transition-colors',
+          'peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2',
+          isDragOver ? 'border-primary bg-primary/5' : 'border-input hover:border-primary/50',
+          disabled && 'cursor-not-allowed opacity-50',
         )}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        tabIndex={0}
-        onClick={handleUploadClick}
       >
-        {selectedFiles.length > 0 ? (
-          <div className="flex flex-col items-center gap-3 w-full">
-            <div className="flex items-center gap-2 text-green-700">
-              <ImageIcon className="h-8 w-8" />
-              <div className="flex-1">
-                <p className="font-medium">{selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected</p>
-              </div>
-              {multiple && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleManualPaste}
-                  disabled={disabled}
-                  className="flex items-center gap-2 h-8 px-3"
-                >
-                  <ClipboardPaste className="h-4 w-4" />
-                  Paste
-                </Button>
-              )}
-              {selectedFiles.length === 1 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleClear();
-                  }}
-                  disabled={disabled}
-                  className="h-8 w-8 p-0 hover:bg-red-100"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-
-            {/* File thumbnails */}
-            <div className="flex flex-wrap gap-2 justify-center max-w-full">
-              {selectedFiles.map((file, index) => (
-                <div key={file.id} className="relative group">
-                  {file.type === 'image' ? (
-                    <div className="w-16 h-16 rounded border overflow-hidden">
-                      <Image
-                        src={file.dataUri}
-                        alt={file.name}
-                        width={64}
-                        height={64}
-                        unoptimized
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  ) : (
-                    <div className="w-16 h-16 rounded border bg-gray-100 flex items-center justify-center">
-                      <ImageIcon className="h-6 w-6 text-gray-400" />
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      handleRemoveFile(index);
-                    }}
-                    className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <>
-            <Upload className="h-12 w-12 text-primary/60 mb-4" />
-            <div className="text-center mb-4">
-              <p className="text-sm font-medium text-foreground mb-1">
-                {isDragOver ? 'Drop your files here' : `Upload image${multiple ? 's' : ''}/PDF${multiple ? 's' : ''}`}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {multiple ? 'Select multiple files or drag & drop' : 'Click to browse or drag & drop'}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap justify-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleUploadClick}
-                disabled={disabled}
-                className="flex items-center gap-2 min-h-10 sm:min-h-0 px-4"
-              >
-                <Upload className="h-4 w-4" />
-                Browse Files
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={handleManualPaste}
-                disabled={disabled}
-                className="flex items-center gap-2 min-h-10 sm:min-h-0 px-4"
-              >
-                <ClipboardPaste className="h-4 w-4" />
-                Paste Image{multiple ? 's' : ''}
-              </Button>
-            </div>
-          </>
-        )}
+        <Upload className="h-6 w-6 text-muted-foreground" aria-hidden />
+        <span className="font-medium">{isDragOver ? 'Drop to add' : 'Choose screenshots or PDFs'}</span>
+        <span className="text-sm text-muted-foreground">or drag them here, or press Ctrl+V to paste</span>
+      </label>
+      <div className="flex justify-center">
+        <Button type="button" variant="ghost" size="sm" onClick={() => void pasteFromClipboard()} disabled={disabled}>
+          <ClipboardPaste aria-hidden /> Paste from clipboard
+        </Button>
       </div>
 
-      {selectedFiles.length === 0 && (
-        <p className="text-xs text-muted-foreground mt-2 text-center">
-          Supports JPG, PNG, GIF, PDF files. You can also paste images with Ctrl+V.
-        </p>
+      {files.length > 0 && (
+        <ul className="flex flex-wrap gap-3" aria-label="Selected files">
+          {files.map((file) => (
+            <li key={file.id} className="relative">
+              {file.type === 'image' ? (
+                // eslint-disable-next-line @next/next/no-img-element -- local data URI preview
+                <img src={file.dataUri} alt={file.name} className="h-20 w-20 rounded-md border object-cover" />
+              ) : (
+                <div className="flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-md border bg-muted p-1 text-center">
+                  <FileText className="h-5 w-5 text-muted-foreground" aria-hidden />
+                  <span className="w-full truncate text-[11px]">{file.name}</span>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => onFilesChange((current) => current.filter((entry) => entry.id !== file.id))}
+                disabled={disabled}
+                aria-label={`Remove ${file.name}`}
+                className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full border bg-card text-foreground shadow-sm hover:bg-accent"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

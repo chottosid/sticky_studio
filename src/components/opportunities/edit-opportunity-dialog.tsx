@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { Loader2, Save } from 'lucide-react';
 import { OpportunityInputSchema } from '@/domain/opportunity/schema';
+import { describeIssue } from '@/domain/opportunity/form';
 import type { Opportunity, OpportunityDraftValue } from '@/lib/types';
 import { updateOpportunityAction } from '@/lib/actions';
 import { Button } from '@/components/ui/button';
@@ -33,7 +34,7 @@ export function EditOpportunityDialog({ opportunity, open, onOpenChange, onSucce
   const handleSave = async () => {
     const parsed = OpportunityInputSchema.safeParse(value);
     if (!parsed.success) {
-      toast({ variant: 'destructive', title: 'Review required', description: parsed.error.issues[0]?.message });
+      toast({ variant: 'destructive', title: 'Check this field', description: parsed.error.issues[0] && describeIssue(parsed.error.issues[0]) });
       return;
     }
 
@@ -41,13 +42,13 @@ export function EditOpportunityDialog({ opportunity, open, onOpenChange, onSucce
     try {
       const result = await updateOpportunityAction({ id: opportunity.id, opportunity: parsed.data });
       if (!result.success) throw new Error(result.message);
-      toast({ title: 'Opportunity updated', description: result.message });
+      toast({ title: result.message });
       onOpenChange(false);
       onSuccess?.();
     } catch (error) {
       toast({
         variant: 'destructive',
-        title: 'Save failed',
+        title: 'Could not save changes',
         description: error instanceof Error ? error.message : 'Could not update the opportunity.',
       });
     } finally {
@@ -57,10 +58,14 @@ export function EditOpportunityDialog({ opportunity, open, onOpenChange, onSucce
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent
+        className="max-h-[92vh] overflow-y-auto sm:max-w-3xl"
+        onInteractOutside={(event) => event.preventDefault()}
+        onEscapeKeyDown={(event) => { if (isSaving) event.preventDefault(); }}
+      >
         <DialogHeader>
           <DialogTitle>Edit opportunity</DialogTitle>
-          <DialogDescription>All extracted fields remain editable. Deadline is optional.</DialogDescription>
+          <DialogDescription>Every field can be changed. The deadline is optional.</DialogDescription>
         </DialogHeader>
         <OpportunityFormFields value={value} onChange={setValue} />
         <DialogFooter>

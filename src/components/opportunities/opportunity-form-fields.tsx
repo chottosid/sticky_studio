@@ -1,8 +1,9 @@
 'use client';
 
+import * as React from 'react';
 import type { Evidence, OpportunityCategory, OpportunityDraftValue } from '@/lib/types';
 import { opportunityCategoryOptions } from '@/domain/opportunity/config';
-import { Badge } from '@/components/ui/badge';
+import { parseListText } from '@/domain/opportunity/form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -48,27 +49,47 @@ function valueOrEmpty(value: string | null) {
   return value || '';
 }
 
-function lines(value: string[]) {
-  return value.join('\n');
+const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((item, index) => item === b[index]);
+
+/**
+ * One item per line. The raw text is kept while typing (spaces, a trailing new line), and only
+ * the parsed list is reported up, so typing never fights the cursor or splits an item.
+ */
+function ListTextarea({ id, value, onChange, rows = 3 }: {
+  id: string; value: string[]; onChange: (value: string[]) => void; rows?: number;
+}) {
+  const [text, setText] = React.useState(() => value.join('\n'));
+  // Re-sync only when the list changed from outside (another draft item, a category switch).
+  React.useEffect(() => {
+    setText((current) => (sameList(parseListText(current), value) ? current : value.join('\n')));
+  }, [value]);
+  return (
+    <Textarea
+      id={id}
+      rows={rows}
+      value={text}
+      onChange={(event) => {
+        setText(event.target.value);
+        onChange(parseListText(event.target.value));
+      }}
+    />
+  );
 }
 
-function parseLines(value: string) {
-  return Array.from(new Set(value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean)));
-}
-
+/** Where the extraction found this value, or that it found nothing. */
 function FieldStatus({ field, evidence = [], unresolved = [] }: {
   field: string; evidence?: Evidence[]; unresolved?: string[];
 }) {
   const item = evidence.find((entry) => entry.field === field);
   if (item) {
     return (
-      <Badge variant="outline" className="ml-2 text-[10px]" title={item.excerpt || `Source: ${item.sourceId}`}>
-        {item.confidence} · {item.sourceId}
-      </Badge>
+      <span className="ml-2 text-xs font-normal text-muted-foreground" title={item.excerpt || undefined}>
+        {item.confidence === 'high' ? 'from the post' : `from the post, ${item.confidence} confidence`}
+      </span>
     );
   }
   if (unresolved.includes(field)) {
-    return <Badge variant="secondary" className="ml-2 text-[10px]">not found</Badge>;
+    return <span className="ml-2 text-xs font-normal text-muted-foreground">not found in the post</span>;
   }
   return null;
 }
@@ -100,7 +121,7 @@ export function OpportunityFormFields({ value, onChange, evidence = [], unresolv
     } as OpportunityDraftValue);
   };
   const label = (htmlFor: string, text: string, field = htmlFor) => (
-    <Label htmlFor={htmlFor} className="flex items-center">
+    <Label htmlFor={htmlFor} className="flex flex-wrap items-baseline">
       {text}<FieldStatus field={field} evidence={evidence} unresolved={unresolvedFields} />
     </Label>
   );
@@ -174,11 +195,11 @@ export function OpportunityFormFields({ value, onChange, evidence = [], unresolv
           </div>
           <div className="space-y-2 md:col-span-2">
             {label('professor-names', 'Professor names (one per line)', 'attributes.professorNames')}
-            <Textarea id="professor-names" rows={2} value={lines(value.attributes.professorNames)} onChange={(event) => updateAttribute('professorNames', parseLines(event.target.value))} />
+            <ListTextarea id="professor-names" rows={2} value={value.attributes.professorNames} onChange={(list) => updateAttribute('professorNames', list)} />
           </div>
           <div className="space-y-2 md:col-span-2">
             {label('research-areas', 'Research areas (one per line)', 'attributes.researchAreas')}
-            <Textarea id="research-areas" rows={2} value={lines(value.attributes.researchAreas)} onChange={(event) => updateAttribute('researchAreas', parseLines(event.target.value))} />
+            <ListTextarea id="research-areas" rows={2} value={value.attributes.researchAreas} onChange={(list) => updateAttribute('researchAreas', list)} />
           </div>
           <div className="space-y-2">
             {label('funding', 'Funding / stipend', 'attributes.funding')}
@@ -211,7 +232,7 @@ export function OpportunityFormFields({ value, onChange, evidence = [], unresolv
           </div>
           <div className="space-y-2 md:col-span-2">
             {label('skills', 'Skills (one per line)', 'attributes.skills')}
-            <Textarea id="skills" rows={2} value={lines(value.attributes.skills)} onChange={(event) => updateAttribute('skills', parseLines(event.target.value))} />
+            <ListTextarea id="skills" rows={2} value={value.attributes.skills} onChange={(list) => updateAttribute('skills', list)} />
           </div>
           {value.category === 'internship' && (
             <div className="space-y-2">
@@ -245,7 +266,7 @@ export function OpportunityFormFields({ value, onChange, evidence = [], unresolv
       </div>
       <div className="space-y-2 md:col-span-2">
         {label('requirements', 'Requirements (one per line)')}
-        <Textarea id="requirements" rows={3} value={lines(value.requirements)} onChange={(event) => updateCommon('requirements', parseLines(event.target.value))} />
+        <ListTextarea id="requirements" value={value.requirements} onChange={(list) => updateCommon('requirements', list)} />
       </div>
       <div className="space-y-2 md:col-span-2">
         {label('details', 'Summary / notes')}

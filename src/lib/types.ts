@@ -22,7 +22,6 @@ export type OpportunitySource = {
   mimeType: string | null;
   storagePath: string | null;
   sourceUrl: string | null;
-  signedUrl?: string | null;
 };
 
 export type Opportunity = OpportunityInput & {

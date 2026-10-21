@@ -2,7 +2,7 @@ import type {Config} from 'tailwindcss';
 import tailwindcssAnimate from 'tailwindcss-animate';
 
 export default {
-  darkMode: ['class'],
+  darkMode: 'media',
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
@@ -18,9 +18,8 @@ export default {
     },
     extend: {
       fontFamily: {
-        body: ['var(--font-pt-sans)', 'sans-serif'],
-        headline: ['var(--font-poppins)', 'sans-serif'],
-        code: ['monospace'],
+        sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
+        display: ['var(--font-display)', 'var(--font-sans)', 'sans-serif'],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -55,6 +54,10 @@ export default {
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
+        },
+        highlight: {
+          DEFAULT: "hsl(var(--highlight))",
+          foreground: "hsl(var(--highlight-foreground))",
         },
       },
       borderRadius: {

@@ -2,13 +2,15 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { ExternalLink, Loader2, PlusCircle, Save, X } from 'lucide-react';
+import { ExternalLink, Loader2, Plus, Save, X } from 'lucide-react';
 import { OpportunityInputSchema, type ExtractionSource } from '@/domain/opportunity/schema';
+import { describeIssue } from '@/domain/opportunity/form';
 import type { DuplicateMatch, ExtractionDraft, OpportunityDraftValue, OpportunityInput } from '@/lib/types';
 import { addOpportunity } from '@/lib/actions';
 import { extractOpportunityDraft } from '@/lib/extraction-actions';
 import { saveTelegramDraft } from '@/lib/telegram-actions';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import {
   Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter,
   DialogHeader, DialogTitle, DialogTrigger,
@@ -57,8 +59,11 @@ export function AddOpportunityDialog({ inboxItem, trigger, onSaved }: AddOpportu
   const [isSaving, setIsSaving] = React.useState(false);
   const [duplicateWarning, setDuplicateWarning] = React.useState<DuplicateWarning | null>(null);
   const { toast } = useToast();
+  // Bumped on every reset, so an extraction that finishes after the dialog closed is ignored.
+  const session = React.useRef(0);
 
   const reset = React.useCallback(() => {
+    session.current += 1;
     setStep('input');
     setActiveTab('files');
     setFiles([]);
@@ -103,8 +108,10 @@ export function AddOpportunityDialog({ inboxItem, trigger, onSaved }: AddOpportu
     }
 
     setIsExtracting(true);
+    const started = session.current;
     try {
       const result = await extractOpportunityDraft({ sources: nextSources });
+      if (started !== session.current) return;
       if (!result.success) throw new Error(result.message);
       if (!result.draft.opportunities.length) {
         toast({ title: 'No opportunities found', description: 'No opportunities found in these sources.' });
@@ -116,9 +123,10 @@ export function AddOpportunityDialog({ inboxItem, trigger, onSaved }: AddOpportu
       setActiveIndex(0);
       setStep('review');
     } catch (error) {
+      if (started !== session.current) return;
       toast({
         variant: 'destructive',
-        title: 'Extraction failed',
+        title: 'Could not read the source',
         description: error instanceof Error ? error.message : 'The source could not be extracted.',
       });
     } finally {
@@ -143,8 +151,8 @@ export function AddOpportunityDialog({ inboxItem, trigger, onSaved }: AddOpportu
         setActiveIndex(index);
         toast({
           variant: 'destructive',
-          title: 'Review required',
-          description: parsed.error.issues[0]?.message || 'Please check the opportunity fields.',
+          title: items.length > 1 ? `Check opportunity ${index + 1}` : 'Check this field',
+          description: parsed.error.issues[0] ? describeIssue(parsed.error.issues[0]) : 'Some fields need attention.',
         });
         return;
       }
@@ -173,7 +181,7 @@ export function AddOpportunityDialog({ inboxItem, trigger, onSaved }: AddOpportu
         return;
       }
       if (!result.success) throw new Error(result.message);
-      toast({ title: 'Opportunity saved', description: result.message });
+      toast({ title: result.message });
       setOpen(false);
       onSaved?.();
     } catch (error) {
@@ -191,19 +199,24 @@ export function AddOpportunityDialog({ inboxItem, trigger, onSaved }: AddOpportu
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {trigger ?? (
-          <Button size="sm" className="h-8 gap-1">
-            <PlusCircle className="h-3.5 w-3.5" />
-            <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">Add Opportunity</span>
+          <Button size="sm">
+            <Plus aria-hidden />
+            <span>Add<span className="sr-only sm:not-sr-only"> opportunity</span></span>
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent
+        className="max-h-[92vh] overflow-y-auto sm:max-w-3xl"
+        // Reviewed edits are easy to lose: only Cancel or the close button may discard them.
+        onInteractOutside={(event) => { if (step === 'review' || isExtracting || isSaving) event.preventDefault(); }}
+        onEscapeKeyDown={(event) => { if (step === 'review' || isSaving) event.preventDefault(); }}
+      >
         <DialogHeader>
-          <DialogTitle>{step === 'input' ? 'Extract an opportunity' : 'Review every field'}</DialogTitle>
+          <DialogTitle>{step === 'input' ? 'Add an opportunity' : 'Review before saving'}</DialogTitle>
           <DialogDescription>
             {step === 'input'
-              ? 'Extraction creates a draft only. Nothing is saved until you confirm it.'
-              : 'Edit any value, including the category. Blank optional fields are accepted.'}
+              ? 'Add a screenshot, PDF or the post text. You review the details before anything is saved.'
+              : 'Check each field against the post. Empty optional fields are fine.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -215,62 +228,62 @@ export function AddOpportunityDialog({ inboxItem, trigger, onSaved }: AddOpportu
                 <TabsTrigger value="text">Paste text</TabsTrigger>
               </TabsList>
               <TabsContent value="files" className="py-3">
-                <UnifiedImageInput onFilesSelect={setFiles} selectedFiles={files} disabled={isExtracting} multiple />
+                <UnifiedImageInput files={files} onFilesChange={setFiles} disabled={isExtracting} />
               </TabsContent>
               <TabsContent value="text" className="space-y-2 py-3">
-                <Label htmlFor="opportunity-source-text">Opportunity text</Label>
-                <Textarea id="opportunity-source-text" rows={12} value={text} onChange={(event) => setText(event.target.value)} placeholder="Paste the announcement and any useful links…" />
+                <Label htmlFor="opportunity-source-text">Post text</Label>
+                <Textarea id="opportunity-source-text" rows={12} maxLength={200_000} value={text} onChange={(event) => setText(event.target.value)} placeholder="Paste the announcement, including any links" />
               </TabsContent>
             </Tabs>
             <DialogFooter>
               <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
               <Button onClick={handleExtract} disabled={isExtracting}>
                 {isExtracting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {isExtracting ? 'Extracting and checking links…' : 'Extract draft'}
+                {isExtracting ? 'Reading the post…' : 'Read details'}
               </Button>
             </DialogFooter>
           </>
         ) : (
           <>
             {draft?.warnings.length ? (
-              <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                <p className="font-medium">Extraction notes</p>
+              <div className="rounded-md border-l-4 border-highlight bg-highlight/15 p-3 text-sm">
+                <p className="font-medium">Check these</p>
                 <ul className="mt-1 list-disc pl-5">{draft.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
               </div>
             ) : null}
             {items.length > 1 ? (
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">
-                  {items.length} opportunities were extracted. Review each one and remove any you
-                  do not want — the rest are saved together.
+                  This post has {items.length} opportunities. Review each one and remove any you
+                  don&apos;t want. The rest are saved together.
                 </p>
-                <div className="flex flex-wrap gap-1.5">
+                <ul className="divide-y rounded-md border bg-card" aria-label="Opportunities in this post">
                   {items.map((item, index) => (
-                    <div key={index} className="flex items-center">
-                      <Button
+                    <li key={index} className="flex items-center">
+                      <button
                         type="button"
-                        variant={index === activeIndex ? 'default' : 'outline'}
-                        size="sm"
-                        className="h-7 max-w-56 truncate rounded-r-none"
                         onClick={() => setActiveIndex(index)}
+                        aria-current={index === activeIndex ? 'true' : undefined}
+                        className={cn(
+                          'min-w-0 flex-1 truncate border-l-2 border-transparent px-3 py-2 text-left text-sm transition-colors hover:bg-accent',
+                          index === activeIndex && 'border-primary bg-accent font-medium',
+                        )}
                       >
-                        {index + 1}. {item.name || 'Unnamed'}
-                      </Button>
-                      <Button
+                        {item.name || 'Unnamed opportunity'}
+                      </button>
+                      <button
                         type="button"
-                        variant={index === activeIndex ? 'default' : 'outline'}
-                        size="sm"
-                        className="h-7 w-7 shrink-0 justify-center p-0 rounded-l-none border-l-0"
                         onClick={() => removeItem(index)}
                         disabled={isSaving}
-                        aria-label={`Remove ${item.name || 'opportunity'} from this save`}
+                        aria-label={`Don't save ${item.name || 'this opportunity'}`}
                         title="Don't save this one"
+                        className="p-2 text-muted-foreground hover:text-foreground disabled:opacity-50"
                       >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </div>
+                        <X className="h-4 w-4" />
+                      </button>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </div>
             ) : null}
             <OpportunityFormFields
@@ -285,7 +298,7 @@ export function AddOpportunityDialog({ inboxItem, trigger, onSaved }: AddOpportu
               )}
               <Button onClick={() => void handleSave()} disabled={isSaving}>
                 {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                {isSaving ? 'Saving…' : items.length > 1 ? `Save ${items.length} Opportunities` : 'Save Opportunity'}
+                {isSaving ? 'Saving…' : items.length > 1 ? `Save ${items.length} opportunities` : 'Save opportunity'}
               </Button>
             </DialogFooter>
           </>
@@ -297,14 +310,14 @@ export function AddOpportunityDialog({ inboxItem, trigger, onSaved }: AddOpportu
       >
         <AlertDialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
           <AlertDialogHeader>
-            <AlertDialogTitle>Possible duplicate opportunities</AlertDialogTitle>
+            <AlertDialogTitle>This may already be saved</AlertDialogTitle>
             <AlertDialogDescription>
-              Review every matching entry. Nothing has been uploaded or saved yet.
+              Compare with the saved entries below. Nothing has been saved yet.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-3">
             {duplicateWarning?.matches.map((match) => (
-              <div key={match.id} className="rounded-md border p-3">
+              <div key={`${match.draftName ?? ''}-${match.id}`} className="rounded-md border p-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <Link
@@ -315,14 +328,13 @@ export function AddOpportunityDialog({ inboxItem, trigger, onSaved }: AddOpportu
                       {match.name} <ExternalLink className="inline h-3.5 w-3.5" />
                     </Link>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {[match.organizationName, match.deadline ? `Deadline: ${match.deadline}` : 'No deadline']
-                        .filter(Boolean).join(' · ')}
+                      {[match.organizationName, match.deadline ? `deadline ${match.deadline}` : 'no deadline']
+                        .filter(Boolean).join(', ')}
                     </p>
                   </div>
                   <Badge variant={match.confidence === 'high' ? 'destructive' : 'secondary'}>
-                    {match.confidence} confidence
+                    {match.confidence === 'high' ? 'Likely the same' : 'Possibly the same'}
                   </Badge>
-                  <Badge variant="outline">{match.category}</Badge>
                 </div>
                 <p className="mt-2 text-sm">{match.reason}</p>
                 {match.draftName ? (
@@ -341,7 +353,7 @@ export function AddOpportunityDialog({ inboxItem, trigger, onSaved }: AddOpportu
               }}
             >
               {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Save anyway
+              Save as new
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

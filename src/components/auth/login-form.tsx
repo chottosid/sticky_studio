@@ -1,61 +1,35 @@
 'use client';
 
-import * as React from 'react';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { login } from '@/lib/actions';
-import { useToast } from '@/hooks/use-toast';
 
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
     <Button type="submit" className="w-full" disabled={pending}>
-      {pending ? 'Signing In...' : 'Sign In'}
+      {pending ? 'Signing in…' : 'Sign in'}
     </Button>
   );
 }
 
 export function LoginForm() {
-  const { toast } = useToast();
   const [state, formAction] = useActionState(login, undefined);
-
-  React.useEffect(() => {
-    if (state?.message) {
-      toast({
-        variant: 'destructive',
-        title: 'Login Failed',
-        description: state.message,
-      });
-    }
-  }, [state, toast]);
-
   return (
-    <div className="grid gap-6">
-      <form action={formAction}>
-        <div className="grid gap-4">
-          <div className="grid gap-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              name="email"
-              placeholder="name@example.com"
-              type="email"
-              autoCapitalize="none"
-              autoComplete="email"
-              autoCorrect="off"
-              required
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="password">Password</Label>
-            <Input id="password" name="password" type="password" required />
-          </div>
-          <SubmitButton />
-        </div>
-      </form>
-    </div>
+    <form action={formAction} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="email">Email</Label>
+        <Input id="email" name="email" type="email" autoComplete="email" autoCapitalize="none" required />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="password">Password</Label>
+        <Input id="password" name="password" type="password" autoComplete="current-password" required />
+      </div>
+      <p role="alert" aria-live="polite" className="min-h-5 text-sm text-destructive">{state?.message}</p>
+      <SubmitButton />
+    </form>
   );
 }

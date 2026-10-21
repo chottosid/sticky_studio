@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@supabase/supabase-js';
-import type { ExtractionSource, OpportunitySource } from '@/lib/types';
+import type { ExtractionSource } from '@/lib/types';
 import { query } from './db';
 import { sourceContentSha256, sourcePayload } from './source-payload';
 
@@ -89,23 +89,11 @@ export async function removeStoredSources(paths: string[]): Promise<void> {
   if (error) console.error('Could not remove source objects:', error.message);
 }
 
-export async function attachSignedUrls(sources: OpportunitySource[]): Promise<OpportunitySource[]> {
-  const paths = sources.flatMap((source) => source.storagePath ? [source.storagePath] : []);
-  if (paths.length === 0) return sources;
-
-  try {
-    const client = getStorageClient();
-    const { data, error } = await client.storage
-      .from(OPPORTUNITY_SOURCE_BUCKET)
-      .createSignedUrls(paths, 60 * 10);
-    if (error) throw error;
-    const signedByPath = new Map(data.map((item) => [item.path, item.signedUrl]));
-    return sources.map((source) => ({
-      ...source,
-      signedUrl: source.storagePath ? signedByPath.get(source.storagePath) || null : source.sourceUrl,
-    }));
-  } catch (error) {
-    console.error('Could not create signed source URLs:', error);
-    return sources;
-  }
+/** A short-lived link, created when the source is opened rather than when the page renders. */
+export async function signedSourceUrl(storagePath: string): Promise<string> {
+  const { data, error } = await getStorageClient()
+    .storage.from(OPPORTUNITY_SOURCE_BUCKET)
+    .createSignedUrl(storagePath, 60);
+  if (error || !data) throw new Error(error?.message || 'Could not sign the source link.');
+  return data.signedUrl;
 }

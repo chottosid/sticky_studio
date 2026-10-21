@@ -1,24 +1,32 @@
 'use client';
 
+import { useEffect, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { useEffect } from 'react';
 
-export default function Error({
-  error,
-  reset,
-}: {
-  error: Error & { digest?: string };
-  reset: () => void;
-}) {
+export default function Error({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  const router = useRouter();
+  const [retrying, startRetry] = useTransition();
+
   useEffect(() => {
     console.error(error);
   }, [error]);
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-4">
-      <h2 className="text-2xl font-bold">Something went wrong!</h2>
-      <p className="text-muted-foreground">{error.message}</p>
-      <Button onClick={() => reset()}>Try again</Button>
-    </div>
+    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-4 px-4">
+      <h1 className="font-display text-2xl font-semibold">This page didn’t load</h1>
+      <p className="text-muted-foreground">
+        The server had a problem fetching your opportunities. Try again; if it keeps happening, check the database connection.
+      </p>
+      <div>
+        <Button
+          disabled={retrying}
+          // Re-fetch server data, then re-render; reset() alone would replay the same failure.
+          onClick={() => startRetry(() => { router.refresh(); reset(); })}
+        >
+          {retrying ? 'Trying again…' : 'Try again'}
+        </Button>
+      </div>
+    </main>
   );
 }

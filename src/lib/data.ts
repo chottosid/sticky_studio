@@ -6,13 +6,12 @@ import {
 } from '@/domain/opportunity/schema';
 import type { DocumentType, Opportunity, OpportunitySource } from '@/lib/types';
 import { getClient, query } from './db';
-import { dateInTimezone, escapeLike, formatDeadline, isNumericId } from './utils';
-import { attachSignedUrls, type UploadedSource } from './source-storage';
+import { escapeLike, formatDeadline, isNumericId } from './utils';
+import { appToday } from './deadlines';
+import type { UploadedSource } from './source-storage';
 import { canonicalizeUrl } from './duplicate-normalization';
 
 type Queryable = Pick<PoolClient, 'query'>;
-
-const appToday = () => dateInTimezone(new Date(), process.env.APP_TIMEZONE || 'Asia/Dhaka');
 
 const SELECT_COLUMNS = `
   id, name, details, deadline, category,
@@ -135,7 +134,7 @@ export async function getOpportunityById(id: string): Promise<Opportunity | unde
      FROM opportunity_sources WHERE opportunity_id = $1 ORDER BY id`,
     [id],
   );
-  opportunity.sources = await attachSignedUrls(sourceResult.rows.map(mapSourceRow));
+  opportunity.sources = sourceResult.rows.map(mapSourceRow);
   return opportunity;
 }
 
@@ -271,4 +270,15 @@ export async function deleteOpportunity(id: string): Promise<{ deleted: boolean;
   } finally {
     client.release();
   }
+}
+
+/** Where a source lives: a private Storage object or an external URL. */
+export async function getSourceLocation(id: string): Promise<{ storagePath: string | null; sourceUrl: string | null } | null> {
+  if (!isNumericId(id)) return null;
+  const result = await query<{ storage_path: string | null; source_url: string | null }>(
+    'SELECT storage_path, source_url FROM opportunity_sources WHERE id = $1',
+    [id],
+  );
+  const row = result.rows[0];
+  return row ? { storagePath: row.storage_path, sourceUrl: row.source_url } : null;
 }
