@@ -1,6 +1,6 @@
 # Sticky Studio
 
-A single-user opportunity manager for jobs, internships, contests, and higher-study positions. Submitted images, PDFs, or text are converted into a structured draft, optionally enriched from bounded same-site links, and shown for human review. Extraction never saves automatically.
+A single-user opportunity manager for jobs, internships, contests, and higher-study positions. Submitted images, PDFs, or text are converted into a structured draft, optionally enriched from bounded same-site links, and shown for human review. Extraction never saves automatically. An optional Telegram bot queues opportunities from groups into a review inbox (see DEPLOYMENT.md).
 
 ## Local setup
 

@@ -76,3 +76,19 @@ Open each existing opportunity in the UI and confirm its signed source link work
 - Confirm the Vercel cleanup cron is gone; existing history must not be deleted.
 
 If the application deployment must be rolled back, the additive columns do not break the previous code and legacy `document_uri` values are still present. Roll back the application first; do not drop new columns or the bucket during an incident.
+
+## Telegram bot
+
+1. Add `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` and `TELEGRAM_OWNER_ID` to the deployment environment.
+2. Run `npm run db:migrate` (adds `004_telegram.sql`).
+3. In @BotFather: `/setprivacy` → choose the bot → **Disable**.
+4. After deploying, register the webhook from a trusted machine:
+
+   ```bash
+   npm run telegram:setup -- https://your-production-domain
+   ```
+
+5. Add the bot to a group **from the owner account**. Groups added by anyone else are left immediately. If the bot was in a group before this release, remove it and add it again.
+6. Forwarding a post to the bot in a private chat from the owner account also queues it.
+
+New opportunities appear in the **Telegram inbox** on the home page; nothing is saved until you review it. For local testing, expose port 9002 over https (for example `cloudflared tunnel --url http://localhost:9002`) and run `npm run telegram:setup -- <tunnel-url>`. Re-run it with the production URL afterwards, because only one webhook can be registered at a time.
