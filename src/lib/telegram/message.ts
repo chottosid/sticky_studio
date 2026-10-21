@@ -13,7 +13,9 @@ export type TelegramUser = { id: number; is_bot: boolean };
 
 export type TelegramForwardOrigin =
   | { type: 'channel'; date: number; chat: TelegramChat; message_id: number }
-  | { type: 'user' | 'hidden_user' | 'chat'; date: number };
+  | { type: 'user'; date: number; sender_user?: TelegramUser }
+  | { type: 'hidden_user'; date: number; sender_user_name?: string }
+  | { type: 'chat'; date: number; sender_chat?: TelegramChat };
 
 export type TelegramMessage = {
   message_id: number;
@@ -159,20 +161,59 @@ export function senderKey(message: TelegramMessage): string {
   return String(message.sender_chat?.id ?? message.from?.id ?? message.chat.id);
 }
 
+type Attachment = { fileId: string; kind: 'image' | 'pdf'; mimeType: string; name: string; bytes: number };
+
+function attachmentsOf(message: TelegramMessage): Attachment[] {
+  const photos = message.photo ?? [];
+  const photo = photos[photos.length - 1];
+  const document = message.document;
+  return [
+    ...(photo ? [{ fileId: photo.file_id, kind: 'image' as const, mimeType: 'image/jpeg', name: 'Telegram photo', bytes: photo.file_size ?? 0 }] : []),
+    ...(document && hasPdf(message)
+      ? [{
+        fileId: document.file_id,
+        kind: 'pdf' as const,
+        mimeType: 'application/pdf',
+        name: document.file_name || 'Telegram document.pdf',
+        bytes: document.file_size ?? 0,
+      }]
+      : []),
+  ];
+}
+
+/** Which original post a message came from: its own, or the source of a forward. */
+function originKey(message: TelegramMessage): string {
+  const origin = message.forward_origin;
+  if (!origin) return 'own';
+  if (origin.type === 'channel') return `channel:${origin.chat.id}`;
+  if (origin.type === 'user') return `user:${origin.sender_user?.id ?? ''}`;
+  if (origin.type === 'hidden_user') return `hidden:${origin.sender_user_name ?? ''}`;
+  return `chat:${origin.sender_chat?.id ?? ''}`;
+}
+
+const originDate = (message: TelegramMessage) => message.forward_origin?.date ?? message.date;
+
 /**
  * Splits a chronological message list into bundles: consecutive messages from one sender with
  * gaps of at most `quietWindowSeconds` describe one post (e.g. a screenshot and its caption).
+ * Forwards of different original posts never share a bundle, and a bundle closes before it
+ * outgrows one extraction (9 attachments, 10 MB of files).
  */
 export function groupIntoBundles(messages: TelegramMessage[], quietWindowSeconds: number): TelegramMessage[][] {
   const bundles: TelegramMessage[][] = [];
   for (const message of messages) {
     const current = bundles[bundles.length - 1];
     const previous = current?.[current.length - 1];
-    if (previous && senderKey(previous) === senderKey(message) && message.date - previous.date <= quietWindowSeconds) {
-      current.push(message);
-    } else {
-      bundles.push([message]);
-    }
+    const attachments = (current ?? []).flatMap(attachmentsOf).concat(attachmentsOf(message));
+    const fits = attachments.length <= MAX_BUNDLE_ATTACHMENTS
+      && attachments.reduce((total, item) => total + item.bytes, 0) <= MAX_TELEGRAM_FILE_BYTES;
+    const continues = previous
+      && senderKey(previous) === senderKey(message)
+      && message.date - previous.date <= quietWindowSeconds
+      && originKey(previous) === originKey(message)
+      && Math.abs(originDate(message) - originDate(previous)) <= quietWindowSeconds;
+    if (continues && fits) current.push(message);
+    else bundles.push([message]);
   }
   return bundles;
 }
@@ -197,21 +238,7 @@ export async function buildBundleSources(
   download: DownloadFile,
   timezone: string,
 ): Promise<ExtractionSource[]> {
-  const attachments = messages.flatMap((message) => {
-    const photos = message.photo ?? [];
-    const photo = photos[photos.length - 1];
-    return [
-      ...(photo ? [{ fileId: photo.file_id, kind: 'image' as const, mimeType: 'image/jpeg', name: 'Telegram photo' }] : []),
-      ...(message.document && hasPdf(message)
-        ? [{
-          fileId: message.document.file_id,
-          kind: 'pdf' as const,
-          mimeType: 'application/pdf',
-          name: message.document.file_name || 'Telegram document.pdf',
-        }]
-        : []),
-    ];
-  });
+  const attachments = messages.flatMap(attachmentsOf);
   const included = attachments.slice(0, MAX_BUNDLE_ATTACHMENTS);
   const omitted = attachments.length - included.length;
 

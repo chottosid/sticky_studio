@@ -5,8 +5,8 @@ import { z } from 'zod';
 import { OpportunityInputSchema } from '@/domain/opportunity/schema';
 import { isAuthenticated } from '@/lib/actions';
 import { saveOpportunityBatch } from '@/lib/save-opportunities';
-import { processTelegramBundle } from '@/lib/telegram/process';
-import { closeInboxItem, getReadyDraft, markForRetry } from '@/lib/telegram/store';
+import { processClaimedRows } from '@/lib/telegram/process';
+import { claimRows, closeInboxItem, getReadyDraft, markForRetry } from '@/lib/telegram/store';
 
 const InboxIdSchema = z.number().int().positive();
 
@@ -42,9 +42,9 @@ export async function retryTelegramMessage(id: number) {
   if (!(await isAuthenticated())) return { success: false as const, message: 'Unauthorized' };
   const parsed = InboxIdSchema.safeParse(id);
   if (!parsed.success) return { success: false as const, message: 'Invalid inbox item.' };
-  const bundle = await markForRetry(parsed.data);
-  if (!bundle) return { success: false as const, message: 'This inbox item cannot be retried.' };
-  await processTelegramBundle(bundle.chatId, bundle.senderKey);
+  const ids = await markForRetry(parsed.data);
+  if (!ids.length) return { success: false as const, message: 'This inbox item cannot be retried.' };
+  await processClaimedRows(await claimRows(ids));
   revalidatePath('/');
   return { success: true as const };
 }

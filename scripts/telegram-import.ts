@@ -18,9 +18,19 @@ export async function main(directory: string | undefined): Promise<void> {
   const html = await readFile(path.join(directory, 'messages.html'), 'utf8');
 
   const { title } = parseTelegramExportHtml(html);
-  const chatId = await findChatByTitle(title);
-  if (chatId === null) throw new Error(`Add the bot to "${title}" first; no single allowlisted chat has that title.`);
-  const { messages } = parseTelegramExportHtml(html, chatId);
+  const chat = await findChatByTitle(title);
+  if (!chat) throw new Error(`Add the bot to "${title}" first; no single allowlisted chat has that title.`);
+  const { chatId, addedAt } = chat;
+  // Only history: the bot already receives everything posted after it joined.
+  const parsed = parseTelegramExportHtml(html, chatId).messages;
+  const messages = parsed
+    .filter((message) => message.date * 1_000 < addedAt.getTime())
+    // Negated ids: in basic groups message ids differ per account, so an exported id could
+    // equal an unrelated live one and make ON CONFLICT drop it. Export ids are always positive.
+    .map((message) => ({ ...message, message_id: -message.message_id }));
+  if (messages.length < parsed.length) {
+    console.log(`Skipping ${parsed.length - messages.length} messages posted after the bot joined.`);
+  }
 
   const readLocalFile: DownloadFile = async (file, mimeType) => {
     const bytes = await readFile(path.join(directory, file));
@@ -32,7 +42,7 @@ export async function main(directory: string | undefined): Promise<void> {
   console.log(`"${title}": ${messages.length} messages in ${bundles.length} bundles`);
 
   for (const bundle of bundles) {
-    const label = bundle.map((message) => message.message_id).join('+');
+    const label = bundle.map((message) => -message.message_id).join('+');
     const head = bundle[bundle.length - 1];
     if (await messageExists(chatId, head.message_id)) {
       console.log(`- ${label}: already imported, skipped`);

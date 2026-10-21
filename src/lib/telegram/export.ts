@@ -54,8 +54,12 @@ export function parseTelegramExportHtml(html: string, chatId = 0): { title: stri
       from: { id: nameId(sender), is_bot: false },
     };
 
-    const forwardedDate = forwarded && /<span class="date details" title="([^"]+)"/.exec(forwarded)?.[1];
-    if (forwardedDate) message.forward_origin = { type: 'user', date: exportDate(forwardedDate) };
+    const forwardedFrom = forwarded && /<div class="from_name">([\s\S]*?)<span class="date details" title="([^"]+)"/.exec(forwarded);
+    if (forwardedFrom) {
+      message.forward_origin = {
+        type: 'hidden_user', sender_user_name: plain(forwardedFrom[1]), date: exportDate(forwardedFrom[2]),
+      };
+    }
 
     const photo = /<a class="photo_wrap[^"]*" href="([^"]+)"/.exec(block)?.[1];
     if (photo) message.photo = [{ file_id: decode(photo), width: 0, height: 0 }];

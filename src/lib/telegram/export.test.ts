@@ -77,7 +77,7 @@ describe('parseTelegramExportHtml', () => {
 
   it('records forwarded messages with their original date', () => {
     expect(parsed.messages[2].forward_origin).toEqual({
-      type: 'user', date: Date.parse('2026-10-07T12:32:43+06:00') / 1_000,
+      type: 'hidden_user', sender_user_name: 'Tamim Hasan Saad', date: Date.parse('2026-10-07T12:32:43+06:00') / 1_000,
     });
     expect(parsed.messages[2].text).toBe('Software Engineer role\nCV: hr@leads-bd.com');
   });

@@ -175,6 +175,32 @@ describe('groupIntoBundles', () => {
     expect(bundles.map((bundle) => bundle.map((item) => item.message_id))).toEqual([[1, 2, 3], [4]]);
   });
 
+  it('never bundles posts forwarded from different originals, even when forwarded together', () => {
+    const forward = (id: number, channelId: number, originDate: number) => message({
+      message_id: id, date: OCT_21 + id, text: `post ${id}`,
+      forward_origin: { type: 'channel', date: originDate, message_id: id, chat: { id: channelId, type: 'channel' } },
+    });
+    const bundles = groupIntoBundles([
+      forward(1, -1001, OCT_01), forward(2, -1001, OCT_01 + 5), forward(3, -1002, OCT_01 + 6), forward(4, -1001, OCT_01 + 9_000),
+    ], 60);
+    expect(bundles.map((bundle) => bundle.map((item) => item.message_id))).toEqual([[1, 2], [3], [4]]);
+  });
+
+  it('closes a bundle before it exceeds nine attachments', () => {
+    const shots = Array.from({ length: 11 }, (_, index) => message({
+      message_id: index + 1, date: OCT_21 + index, photo: [{ file_id: `p${index}`, width: 1, height: 1 }],
+    }));
+    expect(groupIntoBundles(shots, 60).map((bundle) => bundle.length)).toEqual([9, 2]);
+  });
+
+  it('closes a bundle before its files exceed 10 MB', () => {
+    const pdf = (id: number) => message({
+      message_id: id, date: OCT_21 + id,
+      document: { file_id: `d${id}`, mime_type: 'application/pdf', file_size: 4 * 1024 * 1024 },
+    });
+    expect(groupIntoBundles([pdf(1), pdf(2), pdf(3)], 60).map((bundle) => bundle.length)).toEqual([2, 1]);
+  });
+
   it('starts a new bundle when the sender changes', () => {
     const bundles = groupIntoBundles([at(1, 0, 1), at(2, 1, 2), at(3, 2, 2)], 60);
     expect(bundles.map((bundle) => bundle.map((item) => item.message_id))).toEqual([[1], [2, 3]]);

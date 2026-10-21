@@ -2,6 +2,7 @@ import { after, NextResponse } from 'next/server';
 import { leaveChat } from '@/lib/telegram/api';
 import {
   chatMigration,
+  isAllowedChat,
   isValidWebhookSecret,
   membershipAction,
   messageAction,
@@ -56,7 +57,8 @@ export async function POST(request: Request) {
 
   const listed = message.chat.type !== 'private' && await isChatListed(message.chat.id);
   const sender = senderKey(message);
-  const continuesBundle = await hasPendingFrom(message.chat.id, sender);
+  const allowed = isAllowedChat(message.chat, listed, ownerId);
+  const continuesBundle = allowed && await hasPendingFrom(message.chat.id, sender);
   const action = messageAction(message, listed, ownerId, continuesBundle);
   const migration = chatMigration(message);
   if (action === 'migrate' && migration) {
