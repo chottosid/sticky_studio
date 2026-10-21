@@ -51,7 +51,7 @@ const RawOpportunitySchema = z.object({
 });
 
 export const RawExtractionSchema = z.object({
-  opportunities: z.array(RawOpportunitySchema).min(1).max(10),
+  opportunities: z.array(RawOpportunitySchema).max(10),
   discoveredSourceUrls: z.array(z.string()),
   warnings: z.array(z.string()),
 });
@@ -81,7 +81,7 @@ export const rawExtractionJsonSchema = {
   properties: {
     // ponytail: no minItems/maxItems — Gemini's responseJsonSchema rejects the full
     // schema with 400 INVALID_ARGUMENT when they're present; RawExtractionSchema
-    // enforces the 1-10 bound at parse time instead.
+    // enforces the 0-10 bound at parse time instead.
     opportunities: {
       type: 'array',
       items: {

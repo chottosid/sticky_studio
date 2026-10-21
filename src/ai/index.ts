@@ -18,37 +18,8 @@ import {
 } from './input';
 import { enrichFromUrls } from './enrichment';
 import { extractWithProvider } from './provider';
-
-function todayInAppTimezone(): string {
-  const timezone = process.env.APP_TIMEZONE || 'Asia/Dhaka';
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
-  return `${value('year')}-${value('month')}-${value('day')}`;
-}
-
-function extractionPrompt(stage: 'initial' | 'enriched'): string {
-  return `Extract every distinct opportunity from all supplied sources.
-
-Today is ${todayInAppTimezone()}.
-- One entry per distinct opening, program, or contest; merge reposts of the same one. At most 10.
-- When one post lists several openings, give each its own entry named "Role at Organization".
-- Use null or [] when a fact is not supported. Never infer names or links.
-- Resolve relative dates to YYYY-MM-DD; otherwise deadline must be null.
-- category must be job, internship, contest, or higher-study.
-- organizationName means company for jobs/internships, institution/university for higher study, and organizer for contests.
-- Put category-specific facts into attributes; keep irrelevant attributes null or [].
-- details is a concise factual summary, not a dump of the source.
-- Evidence field paths use names such as organizationName or attributes.professorNames.
-- Cite exact source IDs. Keep excerpts short.
-- List useful HTTP(S) links present in sources under discoveredSourceUrls.
-- Mark relevant missing fields in unresolvedFields.
-${stage === 'enriched' ? '- The fetched pages exist only to complete details of the openings from the originally submitted sources; never add an opening that appears only in a fetched page. Prefer facts from the originally submitted sources when sources conflict; add a warning for unresolved conflicts.' : ''}`;
-}
+import { extractionInstructions } from './prompt';
+import { dateInTimezone } from '@/lib/utils';
 
 function normalizeUrls(values: string[]): string[] {
   const urls: string[] = [];
@@ -126,8 +97,9 @@ function toDraft(raw: RawExtraction, sources: PreparedSource[], extraWarnings: s
 }
 
 export async function extractOpportunityDetails(input: unknown): Promise<ExtractionDraft> {
+  const today = dateInTimezone(new Date(), process.env.APP_TIMEZONE || 'Asia/Dhaka');
   const { preparedSources } = await prepareExtractionSources(input);
-  const initial = await extractWithProvider(preparedSources, extractionPrompt('initial'));
+  const initial = await extractWithProvider(preparedSources, extractionInstructions('initial', today));
   const seedUrls = normalizeUrls([
     ...urlsFromPreparedSources(preparedSources),
     ...initial.discoveredSourceUrls,
@@ -145,7 +117,7 @@ export async function extractOpportunityDetails(input: unknown): Promise<Extract
 
   const allSources = [...preparedSources, ...enrichment.sources];
   try {
-    const enriched = await extractWithProvider(allSources, extractionPrompt('enriched'));
+    const enriched = await extractWithProvider(allSources, extractionInstructions('enriched', today));
     // Enrichment completes the submitted openings; it must never add new ones
     // (e.g. admissions or other roles found on a linked careers page).
     const { opportunities, droppedNewOpenings } = mergeEnrichedOpportunities(

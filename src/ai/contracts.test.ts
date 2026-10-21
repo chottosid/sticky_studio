@@ -83,6 +83,12 @@ describe('LLM output normalization', () => {
     expect(draft.warnings).toHaveLength(1);
     expect(draft.warnings[0]).toHaveLength(1_000);
   });
+
+  it('accepts an extraction with no opportunities', () => {
+    expect(RawExtractionSchema.parse({ opportunities: [], discoveredSourceUrls: [], warnings: [] }).opportunities)
+      .toEqual([]);
+    expect(ExtractionDraftSchema.parse({ opportunities: [] }).opportunities).toEqual([]);
+  });
 });
 
 describe('enrichment merge guard', () => {

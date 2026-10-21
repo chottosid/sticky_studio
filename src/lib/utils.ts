@@ -20,3 +20,15 @@ export function formatDeadline(deadline: Date | string | null): string | null {
   const day = String(deadline.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
+
+/** Calendar date (YYYY-MM-DD) of `date` in an IANA timezone. */
+export function dateInTimezone(date: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
+  return `${value('year')}-${value('month')}-${value('day')}`;
+}

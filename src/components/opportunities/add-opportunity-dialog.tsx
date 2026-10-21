@@ -86,6 +86,10 @@ export function AddOpportunityDialog() {
     try {
       const result = await extractOpportunityDraft({ sources: nextSources });
       if (!result.success) throw new Error(result.message);
+      if (!result.draft.opportunities.length) {
+        toast({ title: 'No opportunities found', description: 'No opportunities found in these sources.' });
+        return;
+      }
       setSources(nextSources);
       setDraft(result.draft);
       setItems(result.draft.opportunities.map((item) => item.opportunity));

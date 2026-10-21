@@ -111,7 +111,7 @@ export const ExtractionDraftItemSchema = z.object({
 });
 
 export const ExtractionDraftSchema = z.object({
-  opportunities: z.array(ExtractionDraftItemSchema).min(1).max(10),
+  opportunities: z.array(ExtractionDraftItemSchema).max(10),
   warnings: z.array(z.string().trim().min(1).max(1_000)).max(50).default([]),
   discoveredSourceUrls: z.array(z.string().url().max(2_000)).max(20).default([]),
 });
