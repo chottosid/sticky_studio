@@ -79,6 +79,8 @@ If the application deployment must be rolled back, the additive columns do not b
 
 ## Telegram bot
 
+> **Required for every deployment of this release, even without Telegram:** run `npm run db:migrate` (adds `004_telegram.sql`) *before* deploying. The home page reads the Telegram inbox table and fails without it.
+
 1. Add `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` and `TELEGRAM_OWNER_ID` to the deployment environment.
 2. Run `npm run db:migrate` (adds `004_telegram.sql`).
 3. In @BotFather: `/setprivacy` → choose the bot → **Disable**.

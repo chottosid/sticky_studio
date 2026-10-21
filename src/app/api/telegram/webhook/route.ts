@@ -2,10 +2,9 @@ import { after, NextResponse } from 'next/server';
 import { leaveChat } from '@/lib/telegram/api';
 import {
   chatMigration,
-  isAllowedChat,
   isValidWebhookSecret,
   membershipAction,
-  shouldProcess,
+  messageAction,
   type TelegramUpdate,
 } from '@/lib/telegram/message';
 import { processTelegramMessage } from '@/lib/telegram/process';
@@ -31,7 +30,8 @@ export async function POST(request: Request) {
 
   const membership = update.my_chat_member;
   if (membership) {
-    const action = membershipAction(membership, ownerId);
+    const listed = membership.chat.type !== 'private' && await isChatListed(membership.chat.id);
+    const action = membershipAction(membership, ownerId, listed);
     if (action === 'allow') await allowChat(membership.chat.id, membership.chat.title ?? null);
     if (action === 'remove') await removeChat(membership.chat.id);
     if (action === 'leave') {
@@ -42,16 +42,16 @@ export async function POST(request: Request) {
   }
 
   const message = update.message;
-  if (!message || message.from?.is_bot) return ok();
+  if (!message) return ok();
 
+  const listed = message.chat.type !== 'private' && await isChatListed(message.chat.id);
+  const action = messageAction(message, listed, ownerId);
   const migration = chatMigration(message);
-  if (migration) {
+  if (action === 'migrate' && migration) {
     await migrateChat(migration.from, migration.to);
     return ok();
   }
-
-  const listed = message.chat.type !== 'private' && await isChatListed(message.chat.id);
-  if (!isAllowedChat(message.chat, listed, ownerId) || !shouldProcess(message)) return ok();
+  if (action !== 'queue') return ok();
 
   const id = await queueMessage(message);
   // Reply to Telegram immediately; extraction runs after the response is sent.

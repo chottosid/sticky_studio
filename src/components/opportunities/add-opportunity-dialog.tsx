@@ -25,7 +25,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
-// Declared union: a ternary over the two actions would subtype-reduce away the duplicate-warning variant.
+// Asserted, not just annotated: the ternary's type is subtype-reduced (dropping the duplicate-warning
+// variant), and an annotation alone narrows to that reduced type on assignment.
 type SaveResult =
   | Awaited<ReturnType<typeof addOpportunity>>
   | Awaited<ReturnType<typeof saveTelegramDraft>>;
@@ -152,7 +153,7 @@ export function AddOpportunityDialog({ inboxItem, trigger, onSaved }: AddOpportu
 
     setIsSaving(true);
     try {
-      const result: SaveResult = inboxItem
+      const result = (inboxItem
         ? await saveTelegramDraft({
           telegramMessageId: inboxItem.id,
           opportunities: parsedItems,
@@ -163,7 +164,7 @@ export function AddOpportunityDialog({ inboxItem, trigger, onSaved }: AddOpportu
           sources,
           discoveredSourceUrls: draft?.discoveredSourceUrls || [],
           duplicateConfirmationToken,
-        });
+        })) as SaveResult;
       if (!result.success && 'code' in result && result.code === 'DUPLICATE_WARNING') {
         setDuplicateWarning({
           matches: result.duplicateMatches,

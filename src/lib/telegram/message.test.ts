@@ -5,6 +5,7 @@ import {
   isAllowedChat,
   isValidWebhookSecret,
   membershipAction,
+  messageAction,
   messageLink,
   shouldProcess,
   type TelegramChat,
@@ -92,6 +93,37 @@ describe('membershipAction', () => {
   });
 });
 
+describe('membershipAction after a supergroup upgrade', () => {
+  it('stays when a non-owner join lands in an already-allowlisted chat', () => {
+    expect(membershipAction(membership({ from: { id: 7, is_bot: false } }), OWNER, true)).toBe('none');
+  });
+});
+
+describe('messageAction', () => {
+  const long = 'Hiring: backend engineer at Example Corp. Apply at https://example.com/jobs before 30 Nov.';
+  const anonymousAdmin = { id: 1087968824, is_bot: true };
+
+  it('queues posts by anonymous admins in an allowlisted group', () => {
+    expect(messageAction(message({ text: long, from: anonymousAdmin, sender_chat: group }), true, OWNER)).toBe('queue');
+  });
+
+  it('ignores real bots', () => {
+    expect(messageAction(message({ text: long, from: { id: 99, is_bot: true } }), true, OWNER)).toBe('ignore');
+  });
+
+  it('applies a group upgrade even when an anonymous admin triggered it', () => {
+    expect(messageAction(message({
+      chat: { id: -555, type: 'group' }, from: anonymousAdmin, sender_chat: { id: -555, type: 'group' },
+      migrate_to_chat_id: -1009,
+    }), true, OWNER)).toBe('migrate');
+  });
+
+  it('ignores unlisted chats and chatter', () => {
+    expect(messageAction(message({ text: long }), false, OWNER)).toBe('ignore');
+    expect(messageAction(message({ text: 'thanks!' }), true, OWNER)).toBe('ignore');
+  });
+});
+
 describe('isAllowedChat', () => {
   it('allows listed groups and the owner DM only', () => {
     expect(isAllowedChat(group, true, OWNER)).toBe(true);
@@ -130,6 +162,14 @@ describe('buildTelegramSources', () => {
     expect(sources[0].kind === 'text' && sources[0].text).toBe(
       'Posted 2026-10-21 in Telegram chat "CSE Jobs"\nhttps://t.me/c/1234567890/42\n\nHiring a backend engineer',
     );
+  });
+
+  it('keeps URLs hidden behind text links', async () => {
+    const sources = await buildTelegramSources(message({
+      text: 'Internship at X — Apply here',
+      entities: [{ type: 'text_link', url: 'https://example.com/apply' }],
+    }), download, 'Asia/Dhaka');
+    expect(sources[0].kind === 'text' && sources[0].text).toContain('https://example.com/apply');
   });
 
   it('downloads the largest photo size', async () => {

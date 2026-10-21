@@ -20,10 +20,11 @@ export type TelegramMessage = {
   date: number;
   chat: TelegramChat;
   from?: TelegramUser;
+  sender_chat?: TelegramChat;
   text?: string;
   caption?: string;
-  entities?: Array<{ type: string }>;
-  caption_entities?: Array<{ type: string }>;
+  entities?: Array<{ type: string; url?: string }>;
+  caption_entities?: Array<{ type: string; url?: string }>;
   photo?: Array<{ file_id: string; width: number; height: number; file_size?: number }>;
   document?: { file_id: string; file_name?: string; mime_type?: string; file_size?: number };
   forward_origin?: TelegramForwardOrigin;
@@ -77,15 +78,22 @@ export function shouldProcess(message: TelegramMessage): boolean {
   return text.trim().length >= MIN_TEXT_CHARS;
 }
 
-/** Only join transitions are judged, so later promotions by others never eject the bot. */
+/**
+ * Only join transitions are judged, so later promotions by others never eject the bot.
+ * A join into an already-allowlisted chat (a supergroup upgrade moved the entry there) is kept.
+ */
 export function membershipAction(
   update: TelegramChatMemberUpdate,
   ownerId: number,
+  listed = false,
 ): 'allow' | 'leave' | 'remove' | 'none' {
   if (update.chat.type === 'private') return 'none';
   const wasIn = !GONE_STATUSES.has(update.old_chat_member.status);
   const isIn = !GONE_STATUSES.has(update.new_chat_member.status);
-  if (!wasIn && isIn) return update.from.id === ownerId ? 'allow' : 'leave';
+  if (!wasIn && isIn) {
+    if (update.from.id === ownerId) return 'allow';
+    return listed ? 'none' : 'leave';
+  }
   if (wasIn && !isIn) return 'remove';
   return 'none';
 }
@@ -99,6 +107,22 @@ export function chatMigration(message: TelegramMessage): { from: number; to: num
   if (message.migrate_to_chat_id) return { from: message.chat.id, to: message.migrate_to_chat_id };
   if (message.migrate_from_chat_id) return { from: message.migrate_from_chat_id, to: message.chat.id };
   return null;
+}
+
+/**
+ * Decides what the webhook does with a message. Migration comes first so an upgrade
+ * announced by an anonymous admin still moves the allowlist entry. Anonymous admins and
+ * channel posts carry a stand-in bot `from` plus `sender_chat`; only real bots are ignored.
+ */
+export function messageAction(
+  message: TelegramMessage,
+  listed: boolean,
+  ownerId: number,
+): 'migrate' | 'queue' | 'ignore' {
+  if (chatMigration(message)) return 'migrate';
+  if (message.from?.is_bot && !message.sender_chat) return 'ignore';
+  if (!isAllowedChat(message.chat, listed, ownerId) || !shouldProcess(message)) return 'ignore';
+  return 'queue';
 }
 
 export function messageLink(chat: TelegramChat, messageId: number): string | null {
@@ -133,7 +157,12 @@ export async function buildTelegramSources(
   const posted = dateInTimezone(new Date((message.forward_origin?.date ?? message.date) * 1_000), timezone);
   const header = [`Posted ${posted} in Telegram chat "${chatLabel(message)}"`, originLink(message)]
     .filter(Boolean).join('\n');
-  const body = (message.text ?? message.caption ?? '').trim();
+  // text_link URLs live only in entities; surface them so the model can cite the application link.
+  const hiddenLinks = [...(message.entities ?? []), ...(message.caption_entities ?? [])]
+    .flatMap((entity) => (entity.type === 'text_link' && entity.url ? [entity.url] : []));
+  const text = (message.text ?? message.caption ?? '').trim();
+  const body = [text, hiddenLinks.length ? `Links: ${Array.from(new Set(hiddenLinks)).join(' ')}` : '']
+    .filter(Boolean).join('\n');
 
   const sources: ExtractionSource[] = [{
     id: 'telegram-message',
