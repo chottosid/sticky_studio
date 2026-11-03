@@ -9,7 +9,8 @@ The migration is additive and retains the existing opportunity rows and base64 s
    - `SESSION_SECRET`: a new random secret of at least 32 characters.
    - `SUPABASE_URL`: the project API URL.
    - `SUPABASE_SERVICE_ROLE_KEY`: server-only service-role key; never prefix it with `NEXT_PUBLIC_`.
-   - Optional `APP_TIMEZONE`, `OPENROUTER_MODEL`, and `GEMINI_MODEL` overrides.
+   - `OPENROUTER_API_KEY`: a server-only OpenRouter credential.
+   - Optional `APP_TIMEZONE` and `OPENROUTER_MODEL` overrides (model default: `openai/gpt-6-luna-pro`).
 3. Keep the existing `DATABASE_URL`, authentication, LLM, SMTP, and cron variables.
 
 ## 2. Prepare storage and schema
@@ -34,7 +35,7 @@ SELECT indexname FROM pg_indexes WHERE tablename IN ('opportunities', 'opportuni
 
 ## 3. Deploy compatible application code
 
-Deploy only after both migrations are recorded. Existing records remain readable through their legacy `document_uri`; new records use private Storage and short-lived signed links.
+Deploy only after all migrations are recorded. Existing records remain readable through their legacy `document_uri`; new records use private Storage and short-lived signed links.
 
 The new signed session format invalidates old `session=authenticated` cookies. Log in again after deployment—this is expected.
 
@@ -104,3 +105,13 @@ New opportunities appear in the **Telegram inbox** on the home page; nothing is 
 ## Release: shared sources, login limit, redesign
 
 Run `npm run db:migrate` **before** deploying this release (adds `006_shared_sources_and_login_attempts.sql`). Sign-in reads the new `login_attempts` table, and the dropped unique index is what lets one post save several opportunities.
+
+## Release: separate portfolio assessments and OpenRouter
+
+Run `npm run db:migrate` before deploying (adds `007_profile_priorities.sql`). It creates the two portfolio snapshots, assessment metadata and research audit table. Set `OPENROUTER_API_KEY` and `OPENROUTER_MODEL=openai/gpt-6-luna-pro` in the hosting environment; local `.env` files are not deployed automatically. All extraction and matching calls now use that configured OpenRouter model. Gemini credentials are no longer used.
+
+The authenticated ledger and detail pages show independent applicant tiers and evidence. Only the fixed two public portfolio URLs are refreshed; their text and user-supplied profile notes are used by the model. A failed refresh retains the last good snapshot and displays an error. Profile hashes, opportunity revisions and a seven-day assessment age prevent stale results from appearing current. Concurrent workers lease rows and compare snapshots; in-flight results are discarded if their inputs changed.
+
+`vercel.json` schedules `/api/cron/assessments` daily at 08:00 UTC, separately from reminders. Set `CRON_SECRET`; this route always requires `Authorization: Bearer <CRON_SECRET>`. Each run processes at most 30 opportunities, in batches of three. Initial imports or large backlogs can be completed with the trusted CLI above. Both pages and the route use a 300-second duration budget, so hosting must support it. Failed assessments keep existing results and remain available to retry. Assessment work does not send mail or submit applications.
+
+After deployment, check both profile snapshot dates, choose each applicant in the priority filter, open a result’s evidence and confirm an unauthenticated assessment-cron request returns 401. Run the bulk CLI once to fill pending rows. Research imports and cross-checks retain source documents and record the original metadata in `opportunity_research_audits`.

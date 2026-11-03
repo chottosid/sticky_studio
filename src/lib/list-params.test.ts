@@ -12,6 +12,12 @@ describe('parseListParams', () => {
     expect(parseListParams({ category: 'higher-study', status: 'past', sort: 'added', q: ' phd ' }))
       .toEqual({ category: 'higher-study', status: 'past', sort: 'added', q: 'phd' });
   });
+  it('restores separate applicant and tier filters, with a safe default for priority sorting', () => {
+    expect(parseListParams({ candidate: 'archita', priority: 'P1', sort: 'priority' }))
+      .toEqual({ status: 'upcoming', sort: 'priority', q: '', candidate: 'archita', priority: 'P1' });
+    expect(parseListParams({ sort: 'priority', candidate: 'invalid' }).candidate).toBe('swarup');
+    expect(listHref(parseListParams({ candidate: 'archita', priority: 'P1' }))).toBe('/?candidate=archita&priority=P1');
+  });
 });
 
 describe('listHref', () => {

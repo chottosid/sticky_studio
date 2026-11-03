@@ -49,3 +49,6 @@ next-env.d.ts
 # firebase
 firebase-debug.log
 firestore-debug.log
+
+# Private local opportunity research and backups
+.local/

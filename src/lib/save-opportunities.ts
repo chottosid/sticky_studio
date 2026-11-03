@@ -1,6 +1,8 @@
 import 'server-only';
 
 import { revalidatePath } from 'next/cache';
+import { after } from 'next/server';
+import { assessOpportunities } from './assessments';
 import type { ExtractionSource, OpportunityInput } from '@/domain/opportunity/schema';
 import { saveOpportunity } from '@/lib/data';
 import { sendNewOpportunityEmail } from '@/lib/email';
@@ -57,6 +59,10 @@ export async function saveOpportunityBatch(input: SaveOpportunityBatchInput) {
           Array.from(new Set(discoveredSourceUrls)),
         );
         savedCount += 1;
+        after(async () => {
+          try { await assessOpportunities([saved.id]); revalidatePath('/'); }
+          catch { console.error('Priority refresh failed; saved opportunity can be reassessed.'); }
+        });
         await sendNewOpportunityEmail(saved);
       } catch (error) {
         // Only remove when nothing was saved — earlier saves still reference the objects.

@@ -15,10 +15,10 @@
     "db:migrate-sources": "node scripts/migrate-legacy-sources.js",
     "db:backfill-duplicates": "node scripts/backfill-duplicate-signals.js",
     "telegram:setup": "node scripts/setup-telegram.js",
-    "telegram:import": "node scripts/import-telegram-export.js"
+    "telegram:import": "node scripts/import-telegram-export.js",
+    "opportunities:assess": "node scripts/assess-opportunities.js"
   },
   "dependencies": {
-    "@google/genai": "^1.45.0",
     "@napi-rs/canvas": "0.1.80",
     "@radix-ui/react-alert-dialog": "^1.1.6",
     "@radix-ui/react-dialog": "^1.1.6",

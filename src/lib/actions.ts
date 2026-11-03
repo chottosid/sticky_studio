@@ -20,6 +20,9 @@ import { removeStoredSources } from '@/lib/source-storage';
 import { saveOpportunityBatch } from '@/lib/save-opportunities';
 import { credentialsMatch } from '@/lib/auth/credentials';
 import { query } from '@/lib/db';
+import { after } from 'next/server';
+import type { CandidateId, PriorityTier } from '@/domain/opportunity/assessment';
+import { assessOpportunities } from '@/lib/assessments';
 
 export async function isAuthenticated() {
   const cookieStore = await cookies();
@@ -107,6 +110,8 @@ export async function getOpportunitiesAction(
   searchQuery?: string,
   status?: 'upcoming' | 'past',
   category?: OpportunityCategory,
+  candidateId?: CandidateId,
+  priority?: PriorityTier,
 ) {
   if (!(await isAuthenticated())) {
     return { success: false as const, opportunities: [], total: 0, hasMore: false };
@@ -114,7 +119,7 @@ export async function getOpportunitiesAction(
   try {
     return {
       success: true as const,
-      ...await getOpportunities(Math.max(0, Math.floor(offset)), Math.min(Math.max(1, limit), 50), sortBy, sortOrder, searchQuery, status, category),
+      ...await getOpportunities(Math.max(0, Math.floor(offset)), Math.min(Math.max(1, limit), 50), sortBy, sortOrder, searchQuery, status, category, candidateId, priority),
     };
   } catch (error) {
     console.error('Error fetching opportunities:', error);
@@ -151,6 +156,10 @@ export async function updateOpportunityAction(input: unknown) {
   try {
     const opportunity = await updateOpportunity(parsed.data.id, parsed.data.opportunity);
     if (!opportunity) return { success: false as const, message: 'Opportunity not found' };
+    after(async () => {
+      try { await assessOpportunities([opportunity.id]); revalidatePath('/'); revalidatePath(`/opportunity/${opportunity.id}`); }
+      catch { console.error('Priority refresh failed; opportunity remains saved and can be reassessed.'); }
+    });
     revalidatePath('/');
     revalidatePath(`/opportunity/${parsed.data.id}`);
     return {

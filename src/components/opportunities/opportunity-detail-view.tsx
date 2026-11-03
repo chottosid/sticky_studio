@@ -11,8 +11,10 @@ import { DeadlineMark } from './deadline-mark';
 import { LIST_RETURN_KEY } from '@/lib/list-params';
 import { EditOpportunityDialog } from './edit-opportunity-dialog';
 import { DeleteOpportunityDialog } from './delete-opportunity-dialog';
+import { OpportunityProfileAssessments } from './profile-priorities';
+import type { ProfileSummary } from '@/domain/opportunity/assessment';
 
-type Props = { opportunity: Opportunity; today: string };
+type Props = { opportunity: Opportunity; today: string; profiles: ProfileSummary[] };
 
 type Fact = { label: string; value: string | string[] | null | undefined };
 
@@ -69,7 +71,7 @@ function shortUrl(url: string): string {
   }
 }
 
-export default function OpportunityDetailView({ opportunity, today }: Props) {
+export default function OpportunityDetailView({ opportunity, today, profiles }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const router = useRouter();
@@ -137,6 +139,8 @@ export default function OpportunityDetailView({ opportunity, today }: Props) {
           )}
         </div>
       </div>
+
+      <OpportunityProfileAssessments opportunity={opportunity} profiles={profiles} />
 
       {opportunity.details && (
         <p className="mt-8 max-w-prose whitespace-pre-wrap text-[1.0625rem] leading-relaxed">{opportunity.details}</p>

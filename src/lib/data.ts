@@ -10,13 +10,15 @@ import { escapeLike, formatDeadline, isNumericId } from './utils';
 import { appToday } from './deadlines';
 import type { UploadedSource } from './source-storage';
 import { canonicalizeUrl } from './duplicate-normalization';
+import { ASSESSMENT_VERSION, parseAssessments, type CandidateId, type PriorityTier } from '@/domain/opportunity/assessment';
 
 type Queryable = Pick<PoolClient, 'query'>;
 
 const SELECT_COLUMNS = `
   id, name, details, deadline, category,
   organization_name, organization_type, location, application_url, contact_email,
-  eligibility, requirements, attributes, document_uri, document_type, created_at, updated_at
+  eligibility, requirements, attributes, document_uri, document_type, created_at, updated_at,
+  profile_assessments, content_revision
 `;
 
 function parseJsonValue(value: unknown, fallback: unknown) {
@@ -47,6 +49,8 @@ function mapOpportunityRow(row: Record<string, unknown>): Opportunity {
     sources: [],
     created_at: row.created_at ? String(row.created_at) : undefined,
     updated_at: row.updated_at ? String(row.updated_at) : undefined,
+    contentRevision: Number(row.content_revision || 1),
+    profileAssessments: parseAssessments(parseJsonValue(row.profile_assessments, {})),
     documentUri: row.document_uri ? String(row.document_uri) : undefined,
     documentType: row.document_type ? row.document_type as DocumentType : undefined,
   };
@@ -71,6 +75,8 @@ export async function getOpportunities(
   searchQuery?: string,
   status?: 'upcoming' | 'past',
   category?: OpportunityCategory,
+  candidateId?: CandidateId,
+  priority?: PriorityTier,
 ): Promise<{ opportunities: Opportunity[]; total: number; hasMore: boolean }> {
   const conditions: string[] = [];
   const parameters: unknown[] = [];
@@ -97,12 +103,25 @@ export async function getOpportunities(
   }
   if (category) conditions.push(`category = ${addParameter(category)}`);
 
+  // The candidate is allowlisted before interpolating a JSON key. Stale results are "review".
+  const candidate = candidateId === 'archita' ? 'archita' : 'swarup';
+  const assessment = `profile_assessments->'${candidate}'`;
+  const effectiveTier = `CASE WHEN (${assessment}->>'contentRevision')::integer=content_revision
+    AND ${assessment}->>'profileHash'=(SELECT content_hash FROM candidate_profiles WHERE id='${candidate}')
+    AND ${assessment}->>'policyVersion'='${ASSESSMENT_VERSION}'
+    AND (${assessment}->>'assessedAt')::timestamptz > now()-interval '7 days'
+    THEN ${assessment}->>'tier' ELSE 'review' END`;
+  if (candidateId && priority) conditions.push(`(${effectiveTier})=${addParameter(priority)}`);
+
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  const validSortColumns = ['created_at', 'deadline', 'name', 'id'];
+  const validSortColumns = ['created_at', 'deadline', 'name', 'id', 'priority'];
   const safeSortBy = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
   const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
   // id breaks ties so LIMIT/OFFSET pages never repeat or skip rows with equal sort keys.
-  const order = safeSortBy === 'deadline'
+  const order = safeSortBy === 'priority'
+    ? `ORDER BY CASE (${effectiveTier}) WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3
+       WHEN 'P4' THEN 4 WHEN 'review' THEN 5 ELSE 6 END, deadline ASC NULLS LAST, id ASC`
+    : safeSortBy === 'deadline'
     ? `ORDER BY deadline ${safeSortOrder} NULLS LAST, id ${safeSortOrder}`
     : `ORDER BY ${safeSortBy} ${safeSortOrder}, id ${safeSortOrder}`;
 
@@ -235,6 +254,7 @@ export async function updateOpportunity(id: string, input: OpportunityInput): Pr
       reminder_3_sent = CASE WHEN deadline IS DISTINCT FROM $3::date THEN FALSE ELSE reminder_3_sent END,
       reminder_1_sent = CASE WHEN deadline IS DISTINCT FROM $3::date THEN FALSE ELSE reminder_1_sent END,
       updated_at = CURRENT_TIMESTAMP
+      , content_revision = content_revision + 1
      WHERE id = $13 RETURNING ${SELECT_COLUMNS}`,
     [
       opportunity.name, opportunity.details, opportunity.deadline, opportunity.category,

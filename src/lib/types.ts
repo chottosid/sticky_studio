@@ -12,6 +12,7 @@ export type {
 } from '@/domain/opportunity/schema';
 
 import type { OpportunityInput } from '@/domain/opportunity/schema';
+import type { ProfileAssessments } from '@/domain/opportunity/assessment';
 
 export type DocumentType = 'image' | 'pdf' | 'text' | 'unknown';
 
@@ -29,6 +30,8 @@ export type Opportunity = OpportunityInput & {
   sources: OpportunitySource[];
   created_at?: string;
   updated_at?: string;
+  contentRevision?: number;
+  profileAssessments?: ProfileAssessments;
   /** Compatibility fields while legacy document_uri rows are migrated. */
   documentUri?: string;
   documentType?: DocumentType;

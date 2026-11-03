@@ -121,7 +121,7 @@ function linksFromHtml(html: string, baseUrl: URL): string[] {
   return Array.from(new Set(links));
 }
 
-async function fetchPage(value: string, sourceId: string): Promise<FetchedPage> {
+export async function fetchPage(value: string, sourceId: string): Promise<FetchedPage> {
   let url = await validatePublicUrl(value);
   let response: Response | null = null;
 

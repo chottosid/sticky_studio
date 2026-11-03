@@ -1,17 +1,10 @@
-import { GoogleGenAI, type Content, type Part } from '@google/genai';
 import type { z } from 'zod';
 import { RawExtractionSchema, rawExtractionJsonSchema, type RawExtraction } from './contracts';
 import type { PreparedSource } from './input';
 import { EXTRACTION_SYSTEM_INSTRUCTION, imageSourceMarker, sourceBlock } from './prompt';
 
-const DEFAULT_OPENROUTER_MODEL = 'google/gemini-2.5-flash';
-const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash';
-
-function stripMarkdown(text: string): string {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith('```')) return trimmed;
-  return trimmed.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
-}
+export const DEFAULT_OPENROUTER_MODEL = 'openai/gpt-6-luna-pro';
+export const getOpenRouterModel = () => process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL;
 
 type StructuredRequest<T> = {
   schemaName: string;
@@ -21,184 +14,65 @@ type StructuredRequest<T> = {
 };
 
 function parseStructuredResponse<T>(text: string, schema: z.ZodType<T>): T {
-  const parsed: unknown = JSON.parse(stripMarkdown(text));
-  return schema.parse(parsed);
+  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+  return schema.parse(JSON.parse(cleaned));
 }
 
-function textContext(sources: PreparedSource[]): string {
-  const blocks = sources.flatMap((source) => (
-    source.text ? [sourceBlock({ id: source.id, label: source.label, text: source.text })] : []
-  ));
-  return `Extract opportunities from the sources below.\n\n${blocks.join('\n\n')}`;
+export async function openRouterText(
+  content: string | Array<Record<string, unknown>>,
+  request: Omit<StructuredRequest<unknown>, 'schema'>,
+): Promise<string> {
+  if (!process.env.OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY is not configured.');
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002',
+      'X-Title': 'Sticky Studio',
+    },
+    body: JSON.stringify({
+      model: getOpenRouterModel(),
+      messages: [{ role: 'system', content: request.systemInstruction }, { role: 'user', content }],
+      response_format: { type: 'json_schema', json_schema: {
+        name: request.schemaName, strict: true, schema: request.jsonSchema,
+      } },
+      provider: { require_parameters: true },
+      // Pro-mode reasoning uses output tokens too. No temperature: it is not a supported Luna parameter.
+      max_tokens: 16_384,
+      reasoning: { exclude: true },
+    }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
+    throw new Error(`OpenRouter returned ${response.status}: ${body.error?.message?.slice(0, 300) || 'Request failed'}`);
+  }
+  const result = await response.json() as { choices?: Array<{ message?: { content?: string }; finish_reason?: string }> };
+  const choice = result.choices?.[0];
+  if (!choice?.message?.content) throw new Error('OpenRouter returned no structured answer. Try again with a smaller batch.');
+  if (choice.finish_reason === 'length') throw new Error('The model reached its output limit. Try a smaller batch.');
+  return choice.message.content;
 }
 
-function openRouterContent(sources: PreparedSource[]) {
-  const content: Array<Record<string, unknown>> = [{ type: 'text', text: textContext(sources) }];
+export async function generateStructuredText<T>(prompt: string, request: StructuredRequest<T>): Promise<T> {
+  return parseStructuredResponse(await openRouterText(prompt, request), request.schema);
+}
+
+export async function extractWithProvider(sources: PreparedSource[], instructions: string): Promise<RawExtraction> {
+  const content: Array<Record<string, unknown>> = [{
+    type: 'text', text: sources.filter((source) => source.text).map((source) =>
+      sourceBlock({ id: source.id, label: source.label, text: source.text! }),
+    ).join('\n\n'),
+  }];
   for (const source of sources) {
     if (!source.imageDataUri) continue;
     content.push({ type: 'text', text: imageSourceMarker(source) });
     content.push({ type: 'image_url', image_url: { url: source.imageDataUri } });
   }
-  return content;
-}
-
-async function openRouterCompletion(
-  model: string,
-  userContent: string | Array<Record<string, unknown>>,
-  request: Omit<StructuredRequest<unknown>, 'schema'>,
-): Promise<Response> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error('OPENROUTER_API_KEY is not configured.');
-
-  return fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9002',
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: request.systemInstruction },
-        { role: 'user', content: userContent },
-      ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: request.schemaName,
-          strict: true,
-          schema: request.jsonSchema,
-        },
-      },
-      temperature: 0,
-    }),
-    signal: AbortSignal.timeout(45_000),
+  const raw = await openRouterText(content, {
+    schemaName: 'opportunity_extraction', jsonSchema: rawExtractionJsonSchema,
+    systemInstruction: `${EXTRACTION_SYSTEM_INSTRUCTION}\n\n${instructions}`,
   });
-}
-
-async function callOpenRouterRaw(
-  userContent: string | Array<Record<string, unknown>>,
-  request: Omit<StructuredRequest<unknown>, 'schema'>,
-): Promise<string> {
-  const configuredModel = process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL;
-  let response = await openRouterCompletion(configuredModel, userContent, request);
-
-  // Configured models can be retired upstream (e.g. stealth models removed from
-  // OpenRouter); fall back to the default instead of failing the request.
-  if (response.status === 404 && configuredModel !== DEFAULT_OPENROUTER_MODEL) {
-    response = await openRouterCompletion(DEFAULT_OPENROUTER_MODEL, userContent, request);
-  }
-
-  if (!response.ok) {
-    const errorText = (await response.text()).slice(0, 500);
-    throw new Error(`OpenRouter returned ${response.status}: ${errorText}`);
-  }
-
-  const data = await response.json() as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error('OpenRouter returned an empty response.');
-  return content;
-}
-
-async function callGeminiRaw(
-  contents: Content[] | string,
-  request: Omit<StructuredRequest<unknown>, 'schema'>,
-): Promise<string> {
-  if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not configured.');
-  const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  const response = await client.models.generateContent({
-    model: process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
-    contents,
-    config: {
-      systemInstruction: request.systemInstruction,
-      responseMimeType: 'application/json',
-      responseJsonSchema: request.jsonSchema,
-      temperature: 0,
-      // Same budget as OpenRouter; an unbounded call can outlive the serverless function.
-      httpOptions: { timeout: 45_000 },
-    },
-  });
-
-  if (!response.text) throw new Error('Gemini returned an empty response.');
-  return response.text;
-}
-
-const baseExtractionRequest = {
-  schemaName: 'opportunity_extraction',
-  jsonSchema: rawExtractionJsonSchema,
-  systemInstruction: EXTRACTION_SYSTEM_INSTRUCTION,
-};
-
-// Rules live in the system instruction; the user turn carries only source data.
-function extractionRequest(instructions: string) {
-  return { ...baseExtractionRequest, systemInstruction: `${EXTRACTION_SYSTEM_INSTRUCTION}\n\n${instructions}` };
-}
-
-async function callOpenRouter(sources: PreparedSource[], instructions: string): Promise<string> {
-  return callOpenRouterRaw(openRouterContent(sources), extractionRequest(instructions));
-}
-
-async function callGemini(sources: PreparedSource[], instructions: string): Promise<string> {
-  const parts: Part[] = [{ text: textContext(sources) }];
-  for (const source of sources) {
-    if (!source.imageDataUri) continue;
-    const match = /^data:([^;,]+);base64,([\s\S]+)$/.exec(source.imageDataUri);
-    if (!match) continue;
-    parts.push({ text: imageSourceMarker(source) });
-    parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
-  }
-  return callGeminiRaw([{ role: 'user', parts }], extractionRequest(instructions));
-}
-
-async function repairWithGemini(rawResponse: string): Promise<RawExtraction> {
-  const response = await callGeminiRaw(
-    `Repair this extraction into the required schema without adding facts:\n\n${rawResponse.slice(0, 50_000)}`,
-    baseExtractionRequest,
-  );
-  return parseStructuredResponse(response, RawExtractionSchema);
-}
-
-export async function extractWithProvider(sources: PreparedSource[], instructions: string): Promise<RawExtraction> {
-  const errors: string[] = [];
-
-  for (const provider of [callOpenRouter, callGemini]) {
-    let rawResponse = '';
-    try {
-      rawResponse = await provider(sources, instructions);
-      return parseStructuredResponse(rawResponse, RawExtractionSchema);
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error));
-      if (rawResponse) {
-        try {
-          return await repairWithGemini(rawResponse);
-        } catch (repairError) {
-          errors.push(repairError instanceof Error ? repairError.message : String(repairError));
-        }
-      }
-    }
-  }
-
-  throw new Error(`All extraction providers failed: ${errors.join(' | ')}`);
-}
-
-export async function generateStructuredText<T>(
-  prompt: string,
-  request: StructuredRequest<T>,
-): Promise<T> {
-  const errors: string[] = [];
-  const providerCalls = [
-    () => callOpenRouterRaw(prompt, request),
-    () => callGeminiRaw(prompt, request),
-  ];
-  for (const callProvider of providerCalls) {
-    try {
-      return parseStructuredResponse(await callProvider(), request.schema);
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error));
-    }
-  }
-  throw new Error(`All structured-output providers failed: ${errors.join(' | ')}`);
+  return parseStructuredResponse(raw, RawExtractionSchema);
 }
