@@ -75,15 +75,11 @@ export function nextAction(input: {
   if (progress.stage === 'applied') return { kind: 'complete', label: 'Applied', text: 'Application submitted.' };
   if (state === 'closed') return { kind: 'track', label: 'Posting closed', text: 'Check for a future opening if still interested.' };
   if (assessment?.eligibility === 'ineligible') return { kind: 'skip', label: 'Requirement unmet', text: 'Review the decisive requirement before applying.' };
-  if (!assessment || assessment.eligibility === 'unknown') {
-    return { kind: 'verify', label: 'Verify eligibility', text: assessment?.question || 'Check the source for decisive requirements.' };
-  }
+  // Unclear eligibility is not a blocker: open questions are shown with the next step instead.
   if (state === 'unknown') return { kind: 'verify', label: 'Verify intake', text: 'Confirm this opening is accepting applications.' };
-  if (assessment.question) return { kind: 'verify', label: 'Verify details', text: assessment.question };
-  if (progress.stage === 'applying' || assessment.fit === 'strong' || assessment.fit === 'good') {
-    return { kind: 'prepare', label: 'Prepare application', text: 'Check the application checklist and prepare materials.' };
+  if (progress.stage === 'applying' || !assessment || assessment.fit === 'strong' || assessment.fit === 'good' || assessment.fit === 'unknown') {
+    return { kind: 'prepare', label: 'Prepare application', text: assessment?.question || 'Check the application checklist and prepare materials.' };
   }
-  if (assessment.fit === 'unknown') return { kind: 'verify', label: 'Check fit', text: 'Review the role against this applicant’s goals.' };
   return { kind: 'track', label: 'Keep on watch', text: 'Revisit if it fits your plans.' };
 }
 

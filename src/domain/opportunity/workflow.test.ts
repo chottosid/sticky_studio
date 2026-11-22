@@ -9,8 +9,8 @@ const assessment: ApplicantAssessment = {
 };
 
 describe('next action', () => {
-  it('routes promising legacy leads with unclear eligibility to verification', () => {
-    expect(nextAction({ ...base, assessment: legacySummary({ fit: 'strong', eligibility: 'unclear' }) }).kind).toBe('verify');
+  it('treats promising legacy leads with unclear eligibility as ready to prepare', () => {
+    expect(nextAction({ ...base, assessment: legacySummary({ fit: 'strong', eligibility: 'unclear' }) }).kind).toBe('prepare');
   });
 
   it('separates grounded eligibility, readiness and due dates', () => {
@@ -23,11 +23,13 @@ describe('next action', () => {
     expect(nextAction({ ...base, assessment: { ...facts, question: 'Confirm funding.' } }).text).toBe('Confirm funding.');
   });
 
-  it('blocks a verified unmet requirement and handles missing evidence separately', () => {
+  it('blocks a verified unmet requirement but not missing evidence', () => {
     const check = assessment.checks[0];
     const unmet = assessmentSummary({ ...assessment, checks: [{ ...check, status: 'unmet' }] });
     expect(nextAction({ ...base, assessment: unmet }).kind).toBe('skip');
-    expect(nextAction({ ...base, assessment: assessmentSummary({ ...assessment, checks: [] }) }).kind).toBe('verify');
+    expect(nextAction({ ...base, assessment: assessmentSummary({ ...assessment, checks: [] }) }).kind).toBe('prepare');
+    expect(nextAction({ ...base }).kind).toBe('prepare');
+    expect(nextAction({ ...base, assessment: assessmentSummary({ ...assessment, fit: 'weak' }) }).kind).toBe('track');
   });
 
   it('keeps follow-ups for submitted applications even after the posting closes', () => {

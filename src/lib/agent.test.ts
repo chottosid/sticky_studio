@@ -26,7 +26,7 @@ it('requires sign-in and plans from the ledger without an AI request', async () 
 
   vi.mocked(query).mockResolvedValueOnce(result([{ id: '4', postingStatus: 'unknown', name: 'Apply', deadline: '2026-11-24', result: null }]));
   expect(await runAgent({ kind: 'week', candidate: 'swarup' })).toMatchObject({
-    success: true, result: { kind: 'week', tasks: [{ id: '4', deadline: '2026-11-24', action: { kind: 'verify' } }] },
+    success: true, result: { kind: 'week', tasks: [{ id: '4', deadline: '2026-11-24', action: { kind: 'prepare' } }] },
   });
   expect(searchOpportunities).not.toHaveBeenCalled();
   expect(draftOutreach).not.toHaveBeenCalled();
