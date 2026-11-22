@@ -9,7 +9,7 @@ vi.mock('./db', () => ({ query: vi.fn() }));
 vi.mock('./actions', () => ({ isAuthenticated: vi.fn() }));
 vi.mock('./data', () => ({ getOpportunityById: vi.fn() }));
 vi.mock('./profiles', () => ({ getCandidateProfiles: vi.fn() }));
-vi.mock('./deadlines', () => ({ appToday: () => '2026-11-22' }));
+vi.mock('./deadlines', async (importOriginal) => ({ ...await importOriginal<typeof import('./deadlines')>(), appToday: () => '2026-11-22' }));
 vi.mock('@/ai/agent', () => ({ searchOpportunities: vi.fn(), draftOutreach: vi.fn(), AgentProviderError: class extends Error {} }));
 
 const result = (rows: Record<string, unknown>[]) => ({ rows, rowCount: rows.length, command: 'SELECT', oid: 0, fields: [] });
@@ -24,9 +24,9 @@ it('requires sign-in and plans from the ledger without an AI request', async () 
   expect(await runAgent({ kind: 'week', candidate: 'swarup' })).toMatchObject({ success: false });
   expect(query).not.toHaveBeenCalled();
 
-  vi.mocked(query).mockResolvedValueOnce(result([{ id: 4, name: 'Apply', deadline: '2026-11-24', assessment: null }]));
+  vi.mocked(query).mockResolvedValueOnce(result([{ id: '4', postingStatus: 'unknown', name: 'Apply', deadline: '2026-11-24', result: null }]));
   expect(await runAgent({ kind: 'week', candidate: 'swarup' })).toMatchObject({
-    success: true, result: { kind: 'week', tasks: [{ id: '4', deadline: '2026-11-24', tier: 'review' }] },
+    success: true, result: { kind: 'week', tasks: [{ id: '4', deadline: '2026-11-24', action: { kind: 'verify' } }] },
   });
   expect(searchOpportunities).not.toHaveBeenCalled();
   expect(draftOutreach).not.toHaveBeenCalled();

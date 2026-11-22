@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import {
+  EvidenceSchema,
   ExtractionSourceSchema,
   OpportunityInputSchema,
   type OpportunityCategory,
@@ -21,8 +22,8 @@ import { saveOpportunityBatch } from '@/lib/save-opportunities';
 import { credentialsMatch } from '@/lib/auth/credentials';
 import { query } from '@/lib/db';
 import { after } from 'next/server';
-import type { CandidateId, PriorityTier } from '@/domain/opportunity/assessment';
-import { assessOpportunities } from '@/lib/assessments';
+import type { CandidateId } from '@/domain/opportunity/assessment';
+import { runAssessmentJobs, scheduleAssessments } from './applicant-assessments';
 import { canonicalizeUrl } from './duplicate-normalization';
 
 export async function isAuthenticated() {
@@ -85,6 +86,8 @@ export async function logout() {
 const SaveOpportunityRequestSchema = z.object({
   opportunities: z.array(OpportunityInputSchema).min(1).max(10),
   sources: z.array(ExtractionSourceSchema).max(10),
+  evidence: z.array(z.array(EvidenceSchema).max(100)).max(10).optional(),
+  requestId: z.string().uuid().optional(),
   discoveredSourceUrls: z.array(z.string().url().max(2_000)).max(20).default([]),
   duplicateConfirmationToken: z.string().max(5_000).optional(),
 }).refine(({ sources, discoveredSourceUrls }) => sources.length > 0 || discoveredSourceUrls.some(canonicalizeUrl), {
@@ -114,7 +117,6 @@ export async function getOpportunitiesAction(
   status?: 'upcoming' | 'past',
   category?: OpportunityCategory,
   candidateId?: CandidateId,
-  priority?: PriorityTier,
 ) {
   if (!(await isAuthenticated())) {
     return { success: false as const, opportunities: [], total: 0, hasMore: false };
@@ -122,7 +124,7 @@ export async function getOpportunitiesAction(
   try {
     return {
       success: true as const,
-      ...await getOpportunities(Math.max(0, Math.floor(offset)), Math.min(Math.max(1, limit), 50), sortBy, sortOrder, searchQuery, status, category, candidateId, priority),
+      ...await getOpportunities(Math.max(0, Math.floor(offset)), Math.min(Math.max(1, limit), 50), sortBy, sortOrder, searchQuery, status, category, candidateId),
     };
   } catch (error) {
     console.error('Error fetching opportunities:', error);
@@ -135,7 +137,8 @@ export async function deleteOpportunityAction(id: string) {
   try {
     const result = await deleteOpportunity(id);
     if (!result.deleted) return { success: false as const, message: 'Opportunity not found' };
-    await removeStoredSources(result.storagePaths);
+    await removeStoredSources(result.storagePaths).catch(() => console.error('Source cleanup failed after deletion.'));
+    revalidatePath('/ledger');
     revalidatePath('/');
     revalidatePath('/agent');
     return { success: true as const, message: 'Opportunity deleted' };
@@ -161,11 +164,12 @@ export async function updateOpportunityAction(input: unknown) {
     const opportunity = await updateOpportunity(parsed.data.id, parsed.data.opportunity);
     if (!opportunity) return { success: false as const, message: 'Opportunity not found' };
     after(async () => {
-      try { await assessOpportunities([opportunity.id]); revalidatePath('/'); revalidatePath(`/opportunity/${opportunity.id}`); }
-      catch { console.error('Priority refresh failed; opportunity remains saved and can be reassessed.'); }
+      const keys = await scheduleAssessments({ ids: [opportunity.id] });
+      if (keys.length) await runAssessmentJobs(2, keys);
     });
     revalidatePath('/');
     revalidatePath('/agent');
+    revalidatePath('/ledger');
     revalidatePath(`/opportunity/${parsed.data.id}`);
     return {
       success: true as const,

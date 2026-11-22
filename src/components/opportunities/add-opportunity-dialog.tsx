@@ -145,7 +145,11 @@ export function AddOpportunityDialog({ inboxItem, reviewDraft, trigger, onSaved 
     setActiveIndex((active) => Math.min(active > index ? active - 1 : active, next.length - 1));
   };
 
+  const receipt = React.useRef<{ session: number; id: string }>();
+
   const handleSave = async (duplicateConfirmationToken?: string) => {
+    if (receipt.current?.session !== session.current) receipt.current = { session: session.current, id: crypto.randomUUID() };
+    const evidence = draft?.opportunities.map((item) => item.evidence);
     const parsedItems: OpportunityInput[] = [];
     for (const [index, item] of items.entries()) {
       const parsed = OpportunityInputSchema.safeParse(item);
@@ -167,11 +171,12 @@ export function AddOpportunityDialog({ inboxItem, reviewDraft, trigger, onSaved 
         ? await saveTelegramDraft({
           telegramMessageId: inboxItem.id,
           opportunities: parsedItems,
+          evidence,
           duplicateConfirmationToken,
         })
         : await addOpportunity({
           opportunities: parsedItems,
-          sources,
+          sources, evidence, requestId: receipt.current.id,
           discoveredSourceUrls: draft?.discoveredSourceUrls || [],
           duplicateConfirmationToken,
         })) as SaveResult;

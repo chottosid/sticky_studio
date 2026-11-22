@@ -11,7 +11,7 @@ export type {
   OpportunityInput,
 } from '@/domain/opportunity/schema';
 
-import type { OpportunityInput } from '@/domain/opportunity/schema';
+import type { Evidence, OpportunityInput } from '@/domain/opportunity/schema';
 import type { ProfileAssessments } from '@/domain/opportunity/assessment';
 
 export type DocumentType = 'image' | 'pdf' | 'text' | 'unknown';
@@ -32,7 +32,12 @@ export type Opportunity = OpportunityInput & {
   updated_at?: string;
   contentRevision?: number;
   profileAssessments?: ProfileAssessments;
+  fieldEvidence?: Evidence[];
   /** Compatibility fields while legacy document_uri rows are migrated. */
   documentUri?: string;
   documentType?: DocumentType;
+};
+
+export type OpportunityListRow = Pick<Opportunity, 'id' | 'name' | 'category' | 'deadline' | 'postingStatus' | 'organizationName' | 'location'> & {
+  actions: Partial<Record<import('@/domain/opportunity/assessment').CandidateId, import('@/domain/opportunity/workflow').NextAction>>;
 };

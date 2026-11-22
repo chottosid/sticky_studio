@@ -9,46 +9,34 @@ import { opportunityCategoryLabels, opportunityCategoryOptions } from '@/domain/
 import { getOpportunitiesAction } from '@/lib/actions';
 import { deadlineGroup, deadlineGroupLabels } from '@/lib/deadlines';
 import { LIST_PAGE_SIZE, LIST_RETURN_KEY, listHref, listOrder, type ListParams } from '@/lib/list-params';
-import type { Opportunity } from '@/lib/types';
+import type { OpportunityListRow } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DeadlineMark } from './deadline-mark';
-import { OpportunityPriorityBadges } from './profile-priorities';
-import { assessmentIsCurrent, candidates, priorityTiers, priorityLabels, type ProfileSummary, type CandidateId, type PriorityTier } from '@/domain/opportunity/assessment';
+import { ActionBadge } from '@/components/workflow/action-badge';
+import { candidates, type CandidateId } from '@/domain/opportunity/assessment';
 
 type Props = {
   params: ListParams;
-  initialItems: Opportunity[];
+  initialItems: OpportunityListRow[];
   total: number;
   today: string;
-  profiles: ProfileSummary[];
 };
 
 const pluralLabels: Record<string, string> = {
   job: 'Jobs', internship: 'Internships', contest: 'Contests', 'higher-study': 'Higher study',
 };
 
-export function OpportunityLedger({ params, initialItems, total, today, profiles }: Props) {
+export function OpportunityLedger({ params, initialItems, total, today }: Props) {
   const router = useRouter();
   const [isNavigating, startNavigation] = React.useTransition();
-  const [more, setMore] = React.useState<Opportunity[]>([]);
+  const [more, setMore] = React.useState<OpportunityListRow[]>([]);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [query, setQuery] = React.useState(params.q);
   const [baseItems, setBaseItems] = React.useState(initialItems);
   const lastSentQuery = React.useRef(params.q);
-  const assessmentPolls = React.useRef(0);
-
-  React.useEffect(() => {
-    const pending = initialItems.some((item) => profiles.some((profile) =>
-      !assessmentIsCurrent(item.profileAssessments?.[profile.id], item.contentRevision || 1, profile.contentHash)));
-    if (!pending) { assessmentPolls.current = 0; return; }
-    if (assessmentPolls.current >= 12) return;
-    const timer = window.setTimeout(() => { assessmentPolls.current += 1; router.refresh(); }, 8_000);
-    return () => window.clearTimeout(timer);
-  }, [initialItems, profiles, router]);
-
   // A save, delete or new search re-renders the server list; drop pages fetched for the old one.
   // Done during render (not in an effect) so stale rows never show for a frame.
   if (baseItems !== initialItems) {
@@ -91,7 +79,7 @@ export function OpportunityLedger({ params, initialItems, total, today, profiles
       const { sortBy, sortOrder } = listOrder(params);
       // By offset, not page number: rows added or removed elsewhere can't make it repeat a page.
       const result = await getOpportunitiesAction(
-        items.length, LIST_PAGE_SIZE, sortBy, sortOrder, params.q || undefined, params.status, params.category, params.candidate, params.priority,
+        items.length, LIST_PAGE_SIZE, sortBy, sortOrder, params.q || undefined, params.status, params.category, params.candidate,
       );
       if (!result.success) {
         setLoadError('Your session has ended or the list could not load. Reload the page, or sign in again.');
@@ -192,31 +180,21 @@ export function OpportunityLedger({ params, initialItems, total, today, profiles
             >
               <option value="deadline">Deadline</option>
               <option value="added">Recently added</option>
-              <option value="priority">Profile priority</option>
             </select>
           </label>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <label className="flex items-center gap-2 text-muted-foreground">
-            Priorities for
-            <select aria-label="Priorities for" value={params.candidate || 'both'} className="h-9 rounded-md border bg-card px-2 text-foreground"
+            Show actions for
+            <select aria-label="Show actions for" value={params.candidate || 'both'} className="h-9 rounded-md border bg-card px-2 text-foreground"
               onChange={(event) => {
                 const value = event.target.value;
-                navigate(value === 'both' ? { candidate: undefined, priority: undefined, sort: params.sort === 'priority' ? 'deadline' : params.sort }
+                navigate(value === 'both' ? { candidate: undefined }
                   : { candidate: value as CandidateId });
               }}>
               <option value="both">Both profiles</option>
               {candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
-            </select>
-          </label>
-          <label className="flex items-center gap-2 text-muted-foreground">
-            Tier
-            <select aria-label="Priority tier" value={params.priority || 'all'} disabled={!params.candidate}
-              className="h-9 rounded-md border bg-card px-2 text-foreground disabled:opacity-50"
-              onChange={(event) => navigate({ priority: event.target.value === 'all' ? undefined : event.target.value as PriorityTier })}>
-              <option value="all">All priorities</option>
-              {priorityTiers.map((tier) => <option key={tier} value={tier}>{priorityLabels[tier]}</option>)}
             </select>
           </label>
         </div>
@@ -239,7 +217,7 @@ export function OpportunityLedger({ params, initialItems, total, today, profiles
                     </li>
                   )}
                   <li>
-                    <LedgerRow item={item} today={today} profiles={profiles} />
+                    <LedgerRow item={item} today={today} />
                   </li>
                 </React.Fragment>
               );
@@ -261,7 +239,7 @@ export function OpportunityLedger({ params, initialItems, total, today, profiles
   );
 }
 
-function LedgerRow({ item, today, profiles }: { item: Opportunity; today: string; profiles: ProfileSummary[] }) {
+function LedgerRow({ item, today }: { item: OpportunityListRow; today: string }) {
   const org = [item.organizationName, item.location].filter(Boolean).join(', ');
   return (
     <Link
@@ -272,12 +250,18 @@ function LedgerRow({ item, today, profiles }: { item: Opportunity; today: string
       className="group grid grid-cols-[4.25rem_minmax(0,1fr)] gap-x-3 px-4 py-4 transition-colors hover:bg-accent/60 focus-visible:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[5rem_minmax(0,1fr)_auto] sm:gap-x-4 sm:px-5"
     >
       <div className="pt-0.5">
-        <DeadlineMark deadline={item.deadline} today={today} />
+        {item.postingStatus === 'closed' ? <span className="text-xs text-muted-foreground">Closed</span>
+          : item.postingStatus === 'rolling' ? <span className="text-xs font-medium text-primary">Rolling</span> : <DeadlineMark deadline={item.deadline} today={today} />}
       </div>
       <div className="min-w-0">
         <p className="break-words font-semibold leading-snug group-hover:text-primary">{item.name}</p>
         {org && <p className="mt-0.5 truncate text-sm text-muted-foreground">{org}</p>}
-        <OpportunityPriorityBadges opportunity={item} profiles={profiles} />
+        <div className="mt-2 flex flex-wrap gap-1">
+          {candidates.map((candidate) => {
+            const action = item.actions[candidate.id];
+            return action && <ActionBadge key={candidate.id} action={action} name={candidate.name} />;
+          })}
+        </div>
         <p className="mt-1 text-xs text-muted-foreground sm:hidden">
           {opportunityCategoryLabels[item.category]}
           {item.deadline && `, due ${format(parseISO(item.deadline), 'd MMM yyyy')}`}

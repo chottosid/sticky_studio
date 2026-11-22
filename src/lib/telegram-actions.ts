@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { OpportunityInputSchema } from '@/domain/opportunity/schema';
+import { EvidenceSchema, OpportunityInputSchema } from '@/domain/opportunity/schema';
 import { isAuthenticated } from '@/lib/actions';
 import { saveOpportunityBatch } from '@/lib/save-opportunities';
 import { processClaimedRows } from '@/lib/telegram/process';
@@ -13,6 +13,7 @@ const InboxIdSchema = z.number().int().positive();
 const SaveTelegramDraftSchema = z.object({
   telegramMessageId: InboxIdSchema,
   opportunities: z.array(OpportunityInputSchema).min(1).max(10),
+  evidence: z.array(z.array(EvidenceSchema).max(100)).max(10).optional(),
   duplicateConfirmationToken: z.string().max(5_000).optional(),
 });
 
@@ -23,18 +24,17 @@ export async function saveTelegramDraft(input: unknown) {
     return { success: false as const, message: 'Please correct the highlighted opportunity fields.' };
   }
 
-  const { telegramMessageId, opportunities, duplicateConfirmationToken } = parsed.data;
+  const { telegramMessageId, opportunities, evidence, duplicateConfirmationToken } = parsed.data;
   // Sources stay server-side: they can be larger than the request body limit.
   const stored = await getReadyDraft(telegramMessageId);
   if (!stored) return { success: false as const, message: 'This inbox item is no longer available.' };
 
   const result = await saveOpportunityBatch({
-    opportunities,
+    opportunities, evidence, telegramMessageId,
     sources: stored.sources,
     discoveredSourceUrls: stored.draft.discoveredSourceUrls,
     duplicateConfirmationToken,
   });
-  if (result.success) await closeInboxItem(telegramMessageId, 'saved');
   return result;
 }
 
@@ -50,7 +50,7 @@ export async function retryTelegramMessage(id: number) {
     console.error('Telegram retry failed:', error);
     return { success: false as const, message: 'Retry failed. Try again in a few minutes.' };
   }
-  revalidatePath('/');
+  revalidatePath('/inbox');
   return { success: true as const };
 }
 
@@ -59,6 +59,6 @@ export async function dismissTelegramMessage(id: number) {
   const parsed = InboxIdSchema.safeParse(id);
   if (!parsed.success) return { success: false as const, message: 'Invalid inbox item.' };
   await closeInboxItem(parsed.data, 'dismissed');
-  revalidatePath('/');
+  revalidatePath('/inbox');
   return { success: true as const };
 }

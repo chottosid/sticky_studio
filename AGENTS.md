@@ -56,7 +56,17 @@ NODE
 
 - `opportunities` stores the main record. `requirements`, `attributes`, and `profile_assessments` are JSONB. `deadline` is an app-timezone calendar date and can be `NULL`. The research login grants selected columns, so name the columns in a query.
 - `opportunity_sources` joins to `opportunities.id` through `opportunity_id`. Check `canonical_url` and `content_sha256` along with the opportunity's `application_url` to detect duplicates. Files with `storage_path` are private. Open them in the signed-in app at `/api/sources/<source-id>`.
-- `candidate_profiles` provides the two independent public portfolio snapshots. Use the requested applicant's profile. Assessments may require review when the profile hash, opportunity revision, policy version, or age has changed.
+- `candidate_profiles` provides the two independent public portfolio snapshots. Use the requested applicant's profile. Assessments may require review when the profile hash, opportunity revision, or policy version changes.
+
+## Applicant workflow data
+
+The authenticated opportunity detail shows both applicants' application stages and follow-up dates. Under authorized owner access, the new database tables are:
+
+- `applicant_opportunities` joins `opportunities.id` and `candidate_profiles.id` via `opportunity_id` and `candidate_id`. An absent row means **Considering**. Treat follow-up notes as private.
+- `applicant_assessments` keeps each review with the same keys, the profile hash, opportunity revision, policy version, and `assessed_at`. The latest record is the highest ID for the pair. `result` stores fit, requirement checks, and excerpts. `opportunities.profile_assessments` preserves the original format for historical reference.
+- `opportunities.posting_status` can be rolling, closed, or unknown. A known calendar deadline is in `deadline`. `field_evidence` stores reviewed source excerpts from imports and their source labels.
+
+The research CLI continues to provide scoped access to the opportunity and its sources. Use the signed-in app for personal progress or current fit unless authorized owner access is explicitly needed.
 
 ## Saving reviewed research
 

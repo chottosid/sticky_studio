@@ -29,13 +29,14 @@ const prompts = [
 
 const progress = { week: 'Reading the ledger', research: 'Looking for public sources', outreach: 'Writing your draft' };
 
-export function AgentWorkspace({ opportunities, aiConfigured, initialOpportunityId }: {
+export function AgentWorkspace({ opportunities, aiConfigured, initialOpportunityId, initialCandidate }: {
   opportunities: SavedOpportunity[];
   aiConfigured: boolean;
   initialOpportunityId?: string;
+  initialCandidate: CandidateId;
 }) {
   const initialOpportunity = opportunities.find((item) => item.id === initialOpportunityId);
-  const [candidate, setCandidate] = useState<CandidateId>('swarup');
+  const [candidate, setCandidate] = useState<CandidateId>(initialCandidate);
   const [text, setText] = useState(initialOpportunity ? `Draft an outreach email for #${initialOpportunity.id}` : '');
   const [turns, setTurns] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);

@@ -76,7 +76,7 @@ function relevantUnresolvedFields(raw: RawOpportunity): string[] {
 }
 
 function toDraft(raw: RawExtraction, sources: PreparedSource[], extraWarnings: string[]): ExtractionDraft {
-  const sourceIds = new Set(sources.map((source) => source.id));
+  const byId = new Map(sources.map((source) => [source.id, source]));
   // Clamp before the strict draft parse: model output that exceeds a field cap
   // (e.g. a long evidence excerpt) is truncated, never a failed extraction.
   const clamped = clampModelValue(raw) as RawExtraction;
@@ -84,7 +84,10 @@ function toDraft(raw: RawExtraction, sources: PreparedSource[], extraWarnings: s
   return ExtractionDraftSchema.parse(clampModelValue({
     opportunities: clamped.opportunities.map((item) => ({
       opportunity: normalizeOpportunity(item),
-      evidence: item.evidence.filter((entry) => sourceIds.has(entry.sourceId) && entry.field.trim()),
+      evidence: item.evidence.filter((entry) => byId.has(entry.sourceId) && entry.field.trim()).map((entry) => {
+        const source = byId.get(entry.sourceId)!;
+        return { ...entry, sourceLabel: (source.sourceUrl || source.label).slice(0, 2_000) };
+      }),
       unresolvedFields: Array.from(new Set([...item.unresolvedFields, ...relevantUnresolvedFields(item)]))
         .filter((field) => field.trim()),
     })),

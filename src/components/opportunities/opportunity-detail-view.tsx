@@ -2,9 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
-import { ArrowLeft, ExternalLink, Mail, Pencil, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Mail, Pencil, Trash2 } from 'lucide-react';
 import type { Opportunity } from '@/lib/types';
 import { opportunityCategoryLabels } from '@/domain/opportunity/config';
 import { Button } from '@/components/ui/button';
@@ -12,10 +11,12 @@ import { DeadlineMark } from './deadline-mark';
 import { LIST_RETURN_KEY } from '@/lib/list-params';
 import { EditOpportunityDialog } from './edit-opportunity-dialog';
 import { DeleteOpportunityDialog } from './delete-opportunity-dialog';
-import { OpportunityProfileAssessments } from './profile-priorities';
-import type { ProfileSummary } from '@/domain/opportunity/assessment';
+import { ApplicantPanel } from '@/components/workflow/applicant-panel';
+import type { ApplicantDetail } from '@/lib/applicant-workflow';
+import { postingState } from '@/domain/opportunity/workflow';
+import type { CandidateId } from '@/domain/opportunity/assessment';
 
-type Props = { opportunity: Opportunity; today: string; profiles: ProfileSummary[] };
+type Props = { opportunity: Opportunity; today: string; applicants: ApplicantDetail[]; candidate: CandidateId };
 
 type Fact = { label: string; value: string | string[] | null | undefined };
 
@@ -72,7 +73,7 @@ function shortUrl(url: string): string {
   }
 }
 
-export default function OpportunityDetailView({ opportunity, today, profiles }: Props) {
+export default function OpportunityDetailView({ opportunity, today, applicants, candidate }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const router = useRouter();
@@ -87,19 +88,20 @@ export default function OpportunityDetailView({ opportunity, today, profiles }: 
   }, [opportunity.id]);
 
   // Back to the filtered list this was opened from; a shared link or new tab goes home instead.
-  const goBack = () => (openedFromList.current ? router.back() : router.push('/'));
+  const goBack = () => (openedFromList.current ? router.back() : router.push('/ledger'));
 
   const place = [opportunity.organizationName, opportunity.location].filter(Boolean).join(', ');
   const shownFacts = facts(opportunity).filter((fact) => hasValue(fact.value));
-  const sources = opportunity.sources.length
-    ? opportunity.sources.map((source) => ({
+  const sources = [
+    ...opportunity.sources.map((source) => ({
       id: source.id,
       label: source.storagePath ? source.originalName || 'Saved file' : shortUrl(source.sourceUrl || ''),
       href: source.storagePath ? `/api/sources/${source.id}` : source.sourceUrl,
-    }))
-    : opportunity.documentUri
-      ? [{ id: 'legacy', label: 'Original document', href: opportunity.documentUri }]
-      : [];
+    })),
+    ...(opportunity.documentUri && !opportunity.sources.some((source) => source.storagePath)
+      ? [{ id: 'legacy', label: 'Original document', href: opportunity.documentUri }] : []),
+  ];
+  const state = postingState(opportunity.deadline, opportunity.postingStatus ?? 'unknown', today);
 
   return (
     <article className="mx-auto max-w-3xl rounded-3xl border bg-card p-5 shadow-sm sm:p-9">
@@ -116,12 +118,12 @@ export default function OpportunityDetailView({ opportunity, today, profiles }: 
 
       <div className="mt-8 flex flex-wrap items-end justify-between gap-6 border-y py-5">
         <div className="flex items-end gap-4">
-          <DeadlineMark deadline={opportunity.deadline} today={today} size="lg" />
-          <p className="pb-1 text-sm text-muted-foreground">
-            {opportunity.deadline
-              ? `Deadline ${format(parseISO(opportunity.deadline), 'EEEE, d MMMM yyyy')}`
-              : 'No deadline given'}
-          </p>
+          {state === 'rolling' || state === 'closed'
+            ? <span className="text-sm text-muted-foreground">{state === 'rolling' ? 'Rolling intake' : 'Posting closed'}</span>
+            : <DeadlineMark deadline={opportunity.deadline} today={today} size="lg" />}
+          {state === 'fixed' && opportunity.deadline && <p className="pb-1 text-sm text-muted-foreground">
+            Deadline {format(parseISO(opportunity.deadline), 'EEEE, d MMMM yyyy')}
+          </p>}
         </div>
         <div className="flex flex-wrap gap-2">
           {opportunity.applicationUrl && (
@@ -138,13 +140,10 @@ export default function OpportunityDetailView({ opportunity, today, profiles }: 
               </a>
             </Button>
           )}
-          <Button asChild variant="outline">
-            <Link href={`/agent?opportunity=${opportunity.id}`} prefetch={false}><Sparkles aria-hidden /> Draft outreach</Link>
-          </Button>
         </div>
       </div>
 
-      <OpportunityProfileAssessments opportunity={opportunity} profiles={profiles} />
+      <ApplicantPanel items={applicants} legacy={opportunity.profileAssessments} initialCandidate={candidate} />
 
       {opportunity.details && (
         <p className="mt-8 max-w-prose whitespace-pre-wrap text-[1.0625rem] leading-relaxed">{opportunity.details}</p>
@@ -169,6 +168,15 @@ export default function OpportunityDetailView({ opportunity, today, profiles }: 
         </dl>
       )}
 
+      {Boolean(opportunity.fieldEvidence?.length) && <details className="mt-7 text-sm">
+        <summary className="cursor-pointer font-semibold">Saved source excerpts</summary>
+        <ul className="mt-3 space-y-2">
+          {opportunity.fieldEvidence?.filter((item) => item.excerpt).map((item, index) => <li key={index}>
+            <p className="break-words">“{item.excerpt}”</p>
+            <p className="break-all text-xs text-muted-foreground">{item.field} · {item.sourceLabel || item.sourceId}</p>
+          </li>)}
+        </ul>
+      </details>}
       <section className="mt-10" aria-labelledby="sources-heading">
         <h2 id="sources-heading" className="text-sm text-muted-foreground">Sources</h2>
         {sources.length ? (

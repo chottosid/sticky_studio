@@ -14,27 +14,26 @@ The development server runs at <http://localhost:9002>.
 
 ## Agent
 
-Open **Agent** from the signed-in header. Ask “What’s due this week?” to rank saved opportunities using the selected applicant's deadlines and current assessments. Ask “Find funded PhDs in computer vision” for linked sources and proposals you can review before saving. Ask “Draft a cold email” and choose a saved opportunity, or start from **Draft outreach** on its detail page. Copy the draft for manual sending or refine it in the conversation with a request such as “Make it shorter.” The conversation stays in the current Agent page session.
+Open **Agent** from the signed-in header. Ask “What’s due this week?” to see the selected applicant's upcoming actions and follow-ups. Ask “Find funded PhDs in computer vision” for linked sources and proposals you can review before saving. Ask “Draft a cold email” and choose a saved opportunity, or start from **Draft outreach** on its detail page. Copy the draft for manual sending or refine it in the conversation with a request such as “Make it shorter.” The conversation stays in the current Agent page session.
 
 Research and drafting use `OPENROUTER_AGENT_API_KEY`, a separate server-side OpenRouter key with a monthly credit limit. The optional `OPENROUTER_AGENT_MODEL` defaults to `google/gemini-2.5-flash-lite`. Start a private chat with the configured Telegram bot using `/start` to receive deadline reminders.
 
-## Separate applicant priorities
+## Applicant workflow
 
-The ledger assesses Swarup and Archita independently using their public portfolios at [swarupsidhartho.com](https://swarupsidhartho.com/) and [archi120.github.io](https://archi120.github.io/). Each opportunity shows a tier for each person; filter or sort by either applicant. The detail page explains profile evidence, eligibility, strengths, gaps and the next action. P1 means focus first, P2 worth pursuing, P3 stretch/secondary and P4 low fit. Explicit eligibility failures and insufficient evidence have separate labels. These tiers are effort priorities, not acceptance probabilities.
+Open **Today** for the selected applicant's follow-ups, upcoming applications, and verification tasks. Use **Ledger** to browse every opportunity and **Inbox** to review Telegram drafts. The detail page records each applicant's stage, follow-up date, and note independently. Set rolling or closed postings in the opportunity editor.
 
-Portfolio snapshots refresh at most daily during assessment work. New or edited opportunities are assessed after saving; the daily assessment cron also renews missing or stale results. A changed portfolio, changed opportunity or assessment older than seven days needs review. Use **Refresh portfolios & assess**, **Assess pending**, or the detail page’s **Reassess both** to update manually. Add test scores and constraints under each person’s **Additional facts & preferences**; missing information is not invented or transferred between applicants.
+Assessments show fit and separate checks for decisive requirements, with the evidence used for each check. Earlier results remain in history. Use **Assess applicant** on the detail page for a fresh review. In **Settings**, refresh the portfolios or edit the additional facts and preferences. Once an assessment uses the new workflow, changes to its applicant or opportunity evidence can queue a refresh. Existing legacy assessments migrate without an automatic paid re-assessment of the full ledger.
 
-All model calls use OpenRouter with `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` (default `openai/gpt-6-luna-pro`). The key stays server-side. Portfolio and opportunity text are sent to that provider for assessment. There is no silent Gemini fallback.
+Assessment and extraction calls use the server-side `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` (default `openai/gpt-6-luna-pro`). The assessment call receives the selected applicant's portfolio and additional facts alongside the saved opportunity evidence. Planner and reminder actions come from saved workflow data.
 
-For a trusted local bulk refresh:
+To queue and process a bounded batch, or explicitly reassess selected opportunity IDs:
 
 ```bash
-npm run opportunities:assess -- --refresh-profiles --concurrency 2
-# Reassess even current results, with additional model usage:
-npm run opportunities:assess -- --force
+npm run opportunities:assess -- --refresh-profiles
+npm run opportunities:assess -- 42 57 --candidate=archita --force
 ```
 
-The CLI sends no email or applications. Reviewed PhD leads can be imported with `node scripts/import-opportunity-research.js reviewed.json` (dry run) and `--apply` after review. Imports preserve original announcements, add sources and audit records, and never trigger notification mail. An undated lab call remains a research lead with its uncertainty stated.
+Use [AGENTS.md](AGENTS.md) for read-only Codex access and approved research imports.
 
 ## Quality checks
 

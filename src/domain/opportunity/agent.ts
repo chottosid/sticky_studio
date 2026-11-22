@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { CandidateIdSchema, type PriorityTier } from './assessment';
+import { CandidateIdSchema, type CandidateId } from './assessment';
+import type { NextAction } from './workflow';
 import { opportunityCategories, type ExtractionDraft } from './schema';
 import { isCalendarDate, isNumericId } from '@/lib/utils';
 
@@ -37,8 +38,8 @@ export type WeeklyTask = {
   id: string;
   name: string;
   deadline: string | null;
-  tier: PriorityTier;
-  nextStep: string;
+  candidate: CandidateId;
+  action: NextAction;
 };
 
 export type ResearchProposal = {

@@ -3,7 +3,7 @@ import 'server-only';
 import { extractOpportunityDetails } from '@/ai';
 import { downloadFileAsDataUri } from './api';
 import { buildBundleSources, groupIntoBundles, QUIET_WINDOW_SECONDS } from './message';
-import { claimPendingFrom, hasNewerPending, recordBundleResult, type ClaimedRow } from './store';
+import { claimPendingFrom, claimRows, hasNewerPending, markForRetry, nextInboxRecovery, recordBundleResult, type ClaimedRow } from './store';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -24,23 +24,35 @@ export async function processAfterQuietWindow(id: number, chatId: number, sender
 
 /** Splits claimed rows into posts (same rules as the importer) and extracts each one separately. */
 export async function processClaimedRows(rows: ClaimedRow[]): Promise<void> {
-  const idOf = new Map(rows.map((row) => [row.message, row.id]));
+  const idOf = new Map(rows.map((row) => [row.message, row]));
   const bundles = groupIntoBundles(rows.map((row) => row.message), QUIET_WINDOW_SECONDS);
 
   for (const bundle of bundles) {
-    const ids = bundle.map((message) => idOf.get(message)!);
+    const claimed = bundle.map((message) => idOf.get(message)!);
+    const ids = claimed.map((row) => row.id);
+    const token = claimed[0].leaseToken;
     try {
       const sources = await buildBundleSources(bundle, downloadFileAsDataUri, process.env.APP_TIMEZONE || 'Asia/Dhaka');
       const draft = await extractOpportunityDetails({ sources });
       await recordBundleResult(ids, draft.opportunities.length
         ? { status: 'ready', draft, sources }
-        : { status: 'ignored' });
+        : { status: 'ignored' }, token);
     } catch (error) {
       console.error(`Telegram bundle ${ids.join(',')} could not be processed:`, error);
       await recordBundleResult(ids, {
         status: 'failed',
         error: error instanceof Error ? error.message.slice(0, 1_000) : 'Processing failed.',
-      });
+      }, token);
     }
   }
+}
+
+export async function recoverTelegramInbox() {
+  const item = await nextInboxRecovery();
+  if (!item) return { recovered: 0 };
+  const rows = item.status === 'pending'
+    ? await claimPendingFrom(Number(item.chat_id), item.sender_key)
+    : await claimRows(await markForRetry(item.id, true));
+  await processClaimedRows(rows);
+  return { recovered: rows.length };
 }

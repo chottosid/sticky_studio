@@ -1,16 +1,19 @@
 import type { PoolClient } from 'pg';
 import {
   OpportunityInputSchema,
+  type Evidence,
   type OpportunityCategory,
   type OpportunityInput,
 } from '@/domain/opportunity/schema';
-import type { DocumentType, Opportunity, OpportunitySource } from '@/lib/types';
+import type { DocumentType, Opportunity, OpportunityListRow, OpportunitySource } from '@/lib/types';
 import { getClient, query } from './db';
 import { escapeLike, formatDeadline, isNumericId } from './utils';
 import { appToday } from './deadlines';
 import type { UploadedSource } from './source-storage';
 import { canonicalizeUrl } from './duplicate-normalization';
-import { ASSESSMENT_VERSION, parseAssessments, type CandidateId, type PriorityTier } from '@/domain/opportunity/assessment';
+import { parseAssessments, type CandidateId } from '@/domain/opportunity/assessment';
+
+import { applicantOpportunities } from './applicant-workflow';
 
 type Queryable = Pick<PoolClient, 'query'>;
 
@@ -18,7 +21,7 @@ const SELECT_COLUMNS = `
   id, name, details, deadline, category,
   organization_name, organization_type, location, application_url, contact_email,
   eligibility, requirements, attributes, created_at, updated_at,
-  profile_assessments, content_revision
+  profile_assessments, content_revision, posting_status, field_evidence
 `;
 const DETAIL_COLUMNS = `${SELECT_COLUMNS}, document_uri, document_type`;
 
@@ -34,6 +37,7 @@ function mapOpportunityRow(row: Record<string, unknown>): Opportunity {
     details: row.details || '',
     deadline: formatDeadline(row.deadline as Date | string | null),
     category: row.category || 'job',
+    postingStatus: row.posting_status,
     organizationName: row.organization_name,
     organizationType: row.organization_type,
     location: row.location,
@@ -52,6 +56,7 @@ function mapOpportunityRow(row: Record<string, unknown>): Opportunity {
     updated_at: row.updated_at ? String(row.updated_at) : undefined,
     contentRevision: Number(row.content_revision || 1),
     profileAssessments: parseAssessments(parseJsonValue(row.profile_assessments, {})),
+    fieldEvidence: Array.isArray(row.field_evidence) ? row.field_evidence : [],
     documentUri: row.document_uri ? String(row.document_uri) : undefined,
     documentType: row.document_type ? row.document_type as DocumentType : undefined,
   };
@@ -77,8 +82,7 @@ export async function getOpportunities(
   status?: 'upcoming' | 'past',
   category?: OpportunityCategory,
   candidateId?: CandidateId,
-  priority?: PriorityTier,
-): Promise<{ opportunities: Opportunity[]; total: number; hasMore: boolean }> {
+): Promise<{ opportunities: OpportunityListRow[]; total: number; hasMore: boolean }> {
   const conditions: string[] = [];
   const parameters: unknown[] = [];
 
@@ -99,44 +103,36 @@ export async function getOpportunities(
   if (status) {
     const today = addParameter(appToday());
     conditions.push(status === 'upcoming'
-      ? `(deadline IS NULL OR deadline >= ${today}::date)`
-      : `(deadline IS NOT NULL AND deadline < ${today}::date)`);
+      ? `(posting_status <> 'closed' AND (posting_status = 'rolling' OR deadline IS NULL OR deadline >= ${today}::date))`
+      : `(posting_status = 'closed' OR (posting_status <> 'rolling' AND deadline < ${today}::date))`);
   }
   if (category) conditions.push(`category = ${addParameter(category)}`);
 
-  // The candidate is allowlisted before interpolating a JSON key. Stale results are "review".
-  const candidate = candidateId === 'archita' ? 'archita' : 'swarup';
-  const assessment = `profile_assessments->'${candidate}'`;
-  const effectiveTier = `CASE WHEN (${assessment}->>'contentRevision')::integer=content_revision
-    AND ${assessment}->>'profileHash'=(SELECT content_hash FROM candidate_profiles WHERE id='${candidate}')
-    AND ${assessment}->>'policyVersion'='${ASSESSMENT_VERSION}'
-    AND (${assessment}->>'assessedAt')::timestamptz > now()-interval '7 days'
-    THEN ${assessment}->>'tier' ELSE 'review' END`;
-  if (candidateId && priority) conditions.push(`(${effectiveTier})=${addParameter(priority)}`);
-
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  const validSortColumns = ['created_at', 'deadline', 'name', 'id', 'priority'];
-  const safeSortBy = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
   const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
-  // id breaks ties so LIMIT/OFFSET pages never repeat or skip rows with equal sort keys.
-  const order = safeSortBy === 'priority'
-    ? `ORDER BY CASE (${effectiveTier}) WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3
-       WHEN 'P4' THEN 4 WHEN 'review' THEN 5 ELSE 6 END, deadline ASC NULLS LAST, id ASC`
-    : safeSortBy === 'deadline'
+  const order = sortBy === 'deadline'
     ? `ORDER BY deadline ${safeSortOrder} NULLS LAST, id ${safeSortOrder}`
-    : `ORDER BY ${safeSortBy} ${safeSortOrder}, id ${safeSortOrder}`;
+    : `ORDER BY created_at ${safeSortOrder}, id ${safeSortOrder}`;
 
-  const countResult = await query(`SELECT COUNT(*) AS total FROM opportunities ${where}`, parameters);
+  const [countResult, result] = await Promise.all([
+    query(`SELECT COUNT(*) AS total FROM opportunities ${where}`, [...parameters]),
+    query<{ id: string; name: string; category: OpportunityCategory; deadline: string | null;
+      postingStatus: OpportunityListRow['postingStatus']; organizationName: string | null; location: string | null }>(
+      `SELECT id::text, name, category, CASE WHEN posting_status <> 'rolling' THEN deadline::text END AS deadline,
+        posting_status AS "postingStatus", organization_name AS "organizationName", location
+        FROM opportunities ${where} ${order} LIMIT ${addParameter(limit)} OFFSET ${addParameter(offset)}`, parameters,
+    ),
+  ]);
   const total = Number(countResult.rows[0].total);
-  const limitPlaceholder = addParameter(limit);
-  const offsetPlaceholder = addParameter(offset);
-  const result = await query(
-    `SELECT ${SELECT_COLUMNS} FROM opportunities ${where} ${order} LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}`,
-    parameters,
-  );
-
+  const work = await applicantOpportunities({ ids: result.rows.map((row) => row.id), candidate: candidateId });
+  const actions = new Map<string, OpportunityListRow['actions']>();
+  for (const item of work) {
+    const existing = actions.get(item.id) ?? {};
+    existing[item.candidate] = item.summary.action;
+    actions.set(item.id, existing);
+  }
   return {
-    opportunities: result.rows.map(mapOpportunityRow),
+    opportunities: result.rows.map((row) => ({ ...row, actions: actions.get(row.id) ?? {} })),
     total,
     hasMore: offset + result.rows.length < total,
   };
@@ -158,68 +154,43 @@ export async function getOpportunityById(id: string, { includeLegacyDocument = t
   return opportunity;
 }
 
-export async function saveOpportunity(
+export async function insertOpportunity(
+  client: Queryable,
   input: OpportunityInput,
   sources: UploadedSource[],
   discoveredSourceUrls: string[],
-): Promise<Opportunity> {
+  evidence: Evidence[],
+): Promise<string> {
   const opportunity = OpportunityInputSchema.parse(input);
-  const client = await getClient();
-  try {
-    await client.query('BEGIN');
-    const result = await client.query(
-      `INSERT INTO opportunities (
-        name, details, deadline, category, organization_name, organization_type,
-        location, application_url, contact_email, eligibility, requirements, attributes,
-        document_uri, document_type
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, '', 'unknown')
-      RETURNING ${SELECT_COLUMNS}`,
-      [
-        opportunity.name, opportunity.details, opportunity.deadline, opportunity.category,
-        opportunity.organizationName, opportunity.organizationType, opportunity.location,
-        opportunity.applicationUrl, opportunity.contactEmail, opportunity.eligibility,
-        JSON.stringify(opportunity.requirements), JSON.stringify(opportunity.attributes),
-      ],
-    );
-    const saved = mapOpportunityRow(result.rows[0]);
+  const result = await client.query<{ id: number }>(
+    `INSERT INTO opportunities (
+      name, details, deadline, category, organization_name, organization_type,
+      location, application_url, contact_email, eligibility, requirements, attributes,
+      document_uri, document_type, posting_status, field_evidence
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, '', 'unknown', $13, $14::jsonb)
+    RETURNING id`,
+    [
+      opportunity.name, opportunity.details, opportunity.deadline, opportunity.category,
+      opportunity.organizationName, opportunity.organizationType, opportunity.location,
+      opportunity.applicationUrl, opportunity.contactEmail, opportunity.eligibility,
+      JSON.stringify(opportunity.requirements), JSON.stringify(opportunity.attributes),
+      opportunity.postingStatus ?? 'unknown', JSON.stringify(evidence),
+    ],
+  );
+  const id = String(result.rows[0].id);
+  for (const source of sources) await insertSource(client, id, source);
 
-    for (const source of sources) {
-      await insertSource(client, saved.id, source);
-    }
-    const sourceUrlByCanonical = new Map<string, string>();
-    for (const url of [
-      ...discoveredSourceUrls,
-      ...(opportunity.applicationUrl ? [opportunity.applicationUrl] : []),
-    ]) {
-      const canonical = canonicalizeUrl(url);
-      if (canonical && !sourceUrlByCanonical.has(canonical)) sourceUrlByCanonical.set(canonical, url);
-    }
-    const sourceUrls = Array.from(sourceUrlByCanonical.values());
-    for (const url of sourceUrls) {
-      await insertSource(client, saved.id, {
-        sourceType: 'enriched-url', originalName: null, mimeType: 'text/html', storagePath: null, sourceUrl: url,
-        contentSha256: null, canonicalUrl: canonicalizeUrl(url),
-      });
-    }
-    await client.query('COMMIT');
-    saved.sources = [
-      ...sources.map((source, index) => ({ id: `new-${index}`, ...source })),
-      ...sourceUrls.map((url, index) => ({
-        id: `url-${index}`,
-        sourceType: 'enriched-url' as const,
-        originalName: null,
-        mimeType: 'text/html',
-        storagePath: null,
-        sourceUrl: url,
-      })),
-    ];
-    return saved;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
+  const seen = new Set<string>();
+  for (const url of [...discoveredSourceUrls, opportunity.applicationUrl || '']) {
+    const canonical = canonicalizeUrl(url);
+    if (!canonical || seen.has(canonical)) continue;
+    seen.add(canonical);
+    await insertSource(client, id, {
+      sourceType: 'enriched-url', originalName: null, mimeType: 'text/html', storagePath: null,
+      sourceUrl: url, contentSha256: null, canonicalUrl: canonical,
+    });
   }
+  return id;
 }
 
 async function insertSource(
@@ -256,13 +227,13 @@ export async function updateOpportunity(id: string, input: OpportunityInput): Pr
       reminder_3_sent = CASE WHEN deadline IS DISTINCT FROM $3::date THEN FALSE ELSE reminder_3_sent END,
       reminder_1_sent = CASE WHEN deadline IS DISTINCT FROM $3::date THEN FALSE ELSE reminder_1_sent END,
       updated_at = CURRENT_TIMESTAMP
-      , content_revision = content_revision + 1
+      , content_revision = content_revision + 1, posting_status = $14, workflow_enabled = TRUE
      WHERE id = $13 RETURNING ${DETAIL_COLUMNS}`,
     [
       opportunity.name, opportunity.details, opportunity.deadline, opportunity.category,
       opportunity.organizationName, opportunity.organizationType, opportunity.location,
       opportunity.applicationUrl, opportunity.contactEmail, opportunity.eligibility,
-      JSON.stringify(opportunity.requirements), JSON.stringify(opportunity.attributes), id,
+      JSON.stringify(opportunity.requirements), JSON.stringify(opportunity.attributes), id, opportunity.postingStatus ?? 'unknown',
     ],
   );
   return result.rowCount ? mapOpportunityRow(result.rows[0]) : null;

@@ -6,7 +6,7 @@ import { format, parseISO } from 'date-fns';
 import { ArrowUpRight, Check, Copy, ExternalLink } from 'lucide-react';
 import type { AgentResult, ResearchProposal } from '@/domain/opportunity/agent';
 import { AddOpportunityDialog } from '@/components/opportunities/add-opportunity-dialog';
-import { PriorityBadge } from '@/components/opportunities/profile-priorities';
+import { ActionBadge } from '@/components/workflow/action-badge';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 
@@ -20,13 +20,13 @@ export function AgentResponse({ result }: { result: AgentResult }) {
           {result.tasks.map((task) => (
             <li key={task.id} className="px-3.5 py-3 sm:px-4">
               <div className="flex flex-wrap items-baseline justify-between gap-x-2.5 gap-y-1">
-                <Link href={`/opportunity/${task.id}`} className="break-words text-sm font-semibold underline-offset-4 hover:text-primary hover:underline">
+                <Link href={`/opportunity/${task.id}?candidate=${task.candidate}`} className="break-words text-sm font-semibold underline-offset-4 hover:text-primary hover:underline">
                   {task.name} <ArrowUpRight size={13} aria-hidden className="inline text-muted-foreground" />
                 </Link>
                 <span className="text-xs text-muted-foreground">{task.deadline ? `Due ${format(parseISO(task.deadline), 'd MMM')}` : 'No deadline'}</span>
               </div>
-              <p className="mb-2 mt-1 break-words text-sm text-muted-foreground">{task.nextStep}</p>
-              <PriorityBadge tier={task.tier} />
+              <p className="mb-2 mt-1 break-words text-sm text-muted-foreground">{task.action.text}</p>
+              <ActionBadge action={task.action} />
             </li>
           ))}
         </ol>

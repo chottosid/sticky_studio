@@ -112,15 +112,16 @@ New opportunities appear in the **Telegram inbox** on the home page; nothing is 
 
 Run `npm run db:migrate` **before** deploying this release (adds `006_shared_sources_and_login_attempts.sql`). Sign-in reads the new `login_attempts` table, and the dropped unique index is what lets one post save several opportunities.
 
-## Release: separate portfolio assessments and OpenRouter
+## Release: applicant workflow and background jobs
 
-Run `npm run db:migrate` before deploying (adds `007_profile_priorities.sql`). It creates the two portfolio snapshots, assessment metadata and research audit table. Set `OPENROUTER_API_KEY` and `OPENROUTER_MODEL=openai/gpt-6-luna-pro` in the hosting environment; local `.env` files are not deployed automatically. All extraction and matching calls now use that configured OpenRouter model. Gemini credentials are no longer used.
+1. Configure `DATABASE_CA_CERT` in every hosted environment using the Supabase project's database CA PEM. Local connections to Supabase can use `.local/supabase-postgres-ca.crt`. Local loopback PostgreSQL uses its local connection settings.
+2. Run `npm run db:migrate` before deploying the app. Migration 008 adds applicant progress, assessment history and jobs. It preserves existing opportunity IDs, sources, deadlines, reminder flags and legacy assessment JSON.
+3. Verify authenticated Today, ledger, applicant detail and inbox routes. An unauthenticated request to either cron route must return 401. Test model and Telegram failure paths with a sandbox database and mocked providers.
+4. For rollback, redeploy an earlier application build while keeping the additive schema. Data created by the new workflow remains in its tables.
 
-The authenticated ledger and detail pages show independent applicant tiers and evidence. Only the fixed two public portfolio URLs are refreshed; their text and user-supplied profile notes are used by the model. A failed refresh retains the last good snapshot and displays an error. Profile hashes, opportunity revisions and a seven-day assessment age prevent stale results from appearing current. Concurrent workers lease rows and compare snapshots; in-flight results are discarded if their inputs changed.
+At 08:00 UTC, Vercel refreshes the applicant snapshots, drains a bounded assessment batch and recovers an interrupted Telegram import. At 09:00 UTC, Vercel schedules and delivers deadline and follow-up reminders. Both routes require `CRON_SECRET`. Jobs are stored before processing and retried on later runs. A Telegram send that succeeded immediately before an interrupted database acknowledgement can be repeated.
 
-`vercel.json` schedules `/api/cron/assessments` daily at 08:00 UTC, separately from reminders. Set `CRON_SECRET`; this route always requires `Authorization: Bearer <CRON_SECRET>`. Each run processes at most 30 opportunities, in batches of three. Initial imports or large backlogs can be completed with the trusted CLI above. Both pages and the route use a 300-second duration budget, so hosting must support it. Failed assessments keep existing results and remain available to retry. Assessment work does not send mail or submit applications.
-
-After deployment, check both profile snapshot dates, choose each applicant in the priority filter, open a result’s evidence and confirm an unauthenticated assessment-cron request returns 401. Run the bulk CLI once to fill pending rows. Research imports and cross-checks retain source documents and record the original metadata in `opportunity_research_audits`.
+Use the opportunity detail page to queue or retry a specific applicant assessment. The bulk CLI accepts opportunity IDs and an optional `--candidate=swarup` or `--candidate=archita`. The rollout preserves legacy results and avoids an automatic full-ledger paid backfill.
 
 ## Agent and private Telegram reminders
 
@@ -128,4 +129,4 @@ The repository pins Vercel Functions to Singapore (`sin1`) for the Singapore Sup
 
 For research and outreach, add `OPENROUTER_AGENT_API_KEY` in Vercel. Use a separate OpenRouter key with a positive monthly credit limit. Verify the chosen `OPENROUTER_AGENT_MODEL` with a sample research request that returns source links and an outreach draft. **Plan my week** uses the database directly.
 
-Start a private chat with the bot from the account identified by `TELEGRAM_OWNER_ID`. The existing daily reminder cron sends 7-, 3-, and 1-day Telegram messages. Set `NEXT_PUBLIC_BASE_URL` if reminder links should use a custom domain. Confirm a test reminder in staging and remove the retired `SMTP_*` and `RECIPIENT_EMAILS` settings from the deployment.
+Start a private chat with the bot from the account identified by `TELEGRAM_OWNER_ID`. The daily reminder cron sends applicant-specific follow-ups and 7-, 3-, and 1-day deadline messages. Set `NEXT_PUBLIC_BASE_URL` if reminder links should use a custom domain. Confirm a test reminder in staging and remove the retired `SMTP_*` and `RECIPIENT_EMAILS` settings from the deployment.

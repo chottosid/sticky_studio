@@ -1,5 +1,7 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import ipaddr from 'ipaddr.js';
+import { Agent, fetch } from 'undici';
 import type { PreparedSource } from './input';
 import { extractPdfText } from './pdf';
 
@@ -14,50 +16,30 @@ const RELEVANT_LINK_WORDS = [
 
 type FetchedPage = PreparedSource & { links: string[]; hostname: string };
 
-function isPrivateIpv4(address: string): boolean {
-  const [a, b] = address.split('.').map(Number);
-  return a === 10
-    || a === 127
-    || (a === 169 && b === 254)
-    || (a === 172 && b >= 16 && b <= 31)
-    || (a === 192 && b === 168)
-    || a === 0;
-}
-
 export function isPrivateAddress(address: string): boolean {
-  if (isIP(address) === 4) return isPrivateIpv4(address);
-  const normalized = address.toLowerCase();
-  return normalized === '::1'
-    || normalized === '::'
-    || normalized.startsWith('fc')
-    || normalized.startsWith('fd')
-    || normalized.startsWith('fe8')
-    || normalized.startsWith('fe9')
-    || normalized.startsWith('fea')
-    || normalized.startsWith('feb')
-    || normalized.startsWith('::ffff:127.')
-    || normalized.startsWith('::ffff:10.')
-    || normalized.startsWith('::ffff:192.168.');
+  return !ipaddr.isValid(address) || ipaddr.process(address).range() !== 'unicast';
 }
 
-async function validatePublicUrl(value: string): Promise<URL> {
+async function validatePublicUrl(value: string) {
   const url = new URL(value);
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new Error('Only HTTP(S) source URLs are supported.');
   }
   if (url.username || url.password) throw new Error('Source URLs cannot contain credentials.');
-  if (url.hostname === 'localhost' || url.hostname.endsWith('.local')) {
+  const hostname = url.hostname.replace(/^\[|\]$/g, '');
+  if (hostname === 'localhost' || hostname.endsWith('.local')) {
     throw new Error('Local source URLs are not allowed.');
   }
 
-  const addresses = await lookup(url.hostname, { all: true, verbatim: true });
+  const addresses = isIP(hostname) ? [{ address: hostname, family: isIP(hostname) }]
+    : await lookup(hostname, { all: true, verbatim: true });
   if (!addresses.length || addresses.some(({ address }) => isPrivateAddress(address))) {
     throw new Error('Private network source URLs are not allowed.');
   }
-  return url;
+  return { url, addresses };
 }
 
-async function readLimitedBody(response: Response): Promise<Uint8Array> {
+async function readLimitedBody(response: Awaited<ReturnType<typeof fetch>>): Promise<Uint8Array> {
   const declaredLength = Number(response.headers.get('content-length') || 0);
   if (declaredLength > MAX_RESPONSE_BYTES) throw new Error('Source page is too large.');
   if (!response.body) return new Uint8Array();
@@ -122,28 +104,42 @@ function linksFromHtml(html: string, baseUrl: URL): string[] {
 }
 
 export async function fetchPage(value: string, sourceId: string): Promise<FetchedPage> {
-  let url = await validatePublicUrl(value);
-  let response: Response | null = null;
+  let url = new URL(value);
+  let bytes: Uint8Array = new Uint8Array();
+  let contentType = '';
 
   for (let redirect = 0; redirect <= MAX_REDIRECTS; redirect += 1) {
-    response = await fetch(url, {
-      redirect: 'manual',
-      headers: { 'User-Agent': 'StickyStudio/1.0 opportunity-enrichment' },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    const { addresses } = await validatePublicUrl(url.href);
+    const first = addresses[0];
+    const dispatcher = new Agent({
+      connect: {
+        lookup: (_hostname, options, callback) => {
+          if (options.all) callback(null, addresses);
+          else callback(null, first.address, first.family);
+        },
+      },
     });
-
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get('location');
-      if (!location || redirect === MAX_REDIRECTS) throw new Error('Too many source redirects.');
-      url = await validatePublicUrl(new URL(location, url).toString());
-      continue;
+    try {
+      const response = await fetch(url, {
+        dispatcher,
+        redirect: 'manual',
+        headers: { 'User-Agent': 'StickyStudio/1.0 opportunity-enrichment' },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        if (!location || redirect === MAX_REDIRECTS) throw new Error('Too many source redirects.');
+        url = new URL(location, url);
+        continue;
+      }
+      if (!response.ok) throw new Error(`Source returned HTTP ${response.status}.`);
+      bytes = await readLimitedBody(response);
+      contentType = (response.headers.get('content-type') || '').toLowerCase();
+      break;
+    } finally {
+      await dispatcher.destroy();
     }
-    break;
   }
-
-  if (!response?.ok) throw new Error(`Source returned HTTP ${response?.status || 'error'}.`);
-  const bytes = await readLimitedBody(response);
-  const contentType = (response.headers.get('content-type') || '').toLowerCase();
 
   if (contentType.includes('application/pdf')) {
     return {

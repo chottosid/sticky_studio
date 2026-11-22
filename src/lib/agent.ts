@@ -3,10 +3,11 @@ import 'server-only';
 import { format, parseISO } from 'date-fns';
 import { z } from 'zod';
 import { OpportunityInputSchema } from '@/domain/opportunity/schema';
-import { assessmentIsCurrent, StoredAssessmentSchema, type CandidateId } from '@/domain/opportunity/assessment';
+import type { CandidateId } from '@/domain/opportunity/assessment';
 import { ResearchOutputSchema, type ResearchProposal, type WeeklyTask } from '@/domain/opportunity/agent';
 import { draftOutreach, searchOpportunities, type AgentCitation } from '@/ai/agent';
-import { appToday } from './deadlines';
+import { appToday, daysUntil } from './deadlines';
+import { applicantOpportunities, groupApplicantWork } from './applicant-workflow';
 import { query } from './db';
 import { getOpportunityById } from './data';
 import { canonicalizeUrl } from './duplicate-normalization';
@@ -14,30 +15,16 @@ import { getCandidateProfiles } from './profiles';
 import { sliceText } from './utils';
 
 export async function weeklyTasks(candidate: CandidateId): Promise<WeeklyTask[]> {
-  const { rows } = await query<{
-    id: number; name: string; deadline: string | null; content_revision: number;
-    assessment: unknown; content_hash: string | null;
-  }>(`SELECT o.id, o.name, o.deadline::text, o.content_revision,
-             o.profile_assessments -> ($2::text) AS assessment, p.content_hash
-      FROM opportunities o
-      LEFT JOIN candidate_profiles p ON p.id = $2
-      WHERE o.deadline BETWEEN $1::date AND $1::date + 7 OR o.deadline IS NULL
-      ORDER BY o.deadline ASC NULLS LAST, o.id`, [appToday(), candidate]);
-
-  const ranks = { P1: 0, P2: 1, review: 2, P3: 3, P4: 4, ineligible: 5 };
-  const tasks: WeeklyTask[] = [];
-  for (const row of rows) {
-    const parsed = StoredAssessmentSchema.safeParse(row.assessment);
-    const assessment = parsed.success && assessmentIsCurrent(parsed.data, row.content_revision, row.content_hash ?? undefined)
-      ? parsed.data : undefined;
-    const tier = assessment?.tier ?? 'review';
-    if (tier === 'ineligible' || (!row.deadline && tier !== 'P1' && tier !== 'P2')) continue;
-    tasks.push({
-      id: String(row.id), name: row.name, deadline: row.deadline, tier,
-      nextStep: assessment?.nextStep || 'Review the opportunity and check eligibility.',
-    });
-  }
-  return tasks.sort((a, b) => Number(!a.deadline) - Number(!b.deadline) || ranks[a.tier] - ranks[b.tier]).slice(0, 20);
+  const today = appToday();
+  const groups = groupApplicantWork(await applicantOpportunities({ candidate }));
+  return [
+    ...groups['follow-ups'], ...groups.due,
+    ...groups.verification.filter((item) => item.deadline ? daysUntil(item.deadline, today) <= 7 : item.summary.fit === 'strong' || item.summary.progress.stage === 'applying'),
+    ...groups.prepare,
+  ].slice(0, 20).map((item) => ({
+    id: item.id, candidate, name: item.name, action: item.summary.action,
+    deadline: item.summary.action.kind === 'follow-up' ? item.summary.progress.followUpOn : item.deadline,
+  }));
 }
 
 function sourceDeadline(value: string | null, excerpt: string): string | null {

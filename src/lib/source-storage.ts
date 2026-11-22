@@ -2,7 +2,8 @@ import 'server-only';
 
 import { createClient } from '@supabase/supabase-js';
 import type { ExtractionSource } from '@/lib/types';
-import { query } from './db';
+import type { PoolClient } from 'pg';
+import { getClient } from './db';
 import { sourceContentSha256, sourcePayload } from './source-payload';
 
 export const OPPORTUNITY_SOURCE_BUCKET = 'opportunity-sources';
@@ -33,60 +34,65 @@ export type UploadedSource = {
   canonicalUrl: null;
 };
 
-export async function uploadOpportunitySources(sources: ExtractionSource[]): Promise<UploadedSource[]> {
+export async function uploadOpportunitySources(sources: ExtractionSource[], uploaded: UploadedSource[] = []): Promise<UploadedSource[]> {
   const client = getStorageClient();
-  const uploaded: UploadedSource[] = [];
   const totalBytes = sources.reduce((total, source) => total + sourcePayload(source).bytes.length, 0);
   if (totalBytes > 10 * 1024 * 1024) {
     throw new Error('The combined source size must be 10 MB or less.');
   }
 
-  try {
-    for (const [index, source] of sources.entries()) {
-      const { bytes, mimeType } = sourcePayload(source);
-      const originalName = source.kind === 'text' ? `${source.name}.txt` : source.name;
-      const contentSha256 = sourceContentSha256(source);
-      // Content-addressed path: identical sources uploaded for several
-      // opportunities (or on re-extraction) collapse to one object.
-      const storagePath = `${contentSha256}/${index + 1}-${safeFileName(originalName)}`;
-      const { error } = await client.storage
-        .from(OPPORTUNITY_SOURCE_BUCKET)
-        .upload(storagePath, bytes, { contentType: mimeType, upsert: true });
+  for (const [index, source] of sources.entries()) {
+    const { bytes, mimeType } = sourcePayload(source);
+    const originalName = source.kind === 'text' ? `${source.name}.txt` : source.name;
+    const contentSha256 = sourceContentSha256(source);
+    // Content-addressed path: identical sources uploaded for several
+    // opportunities (or on re-extraction) collapse to one object.
+    const storagePath = `${contentSha256}/${index + 1}-${safeFileName(originalName)}`;
+    const { error } = await client.storage
+      .from(OPPORTUNITY_SOURCE_BUCKET)
+      .upload(storagePath, bytes, { contentType: mimeType, upsert: true });
 
-      if (error) throw new Error(`Could not upload ${originalName}: ${error.message}`);
-      uploaded.push({
-        sourceType: source.kind === 'text' ? 'pasted-text' : 'upload',
-        originalName,
-        mimeType,
-        storagePath,
-        sourceUrl: null,
-        contentSha256,
-        canonicalUrl: null,
-      });
-    }
-    return uploaded;
-  } catch (error) {
-    await removeStoredSources(uploaded.map((source) => source.storagePath));
-    throw error;
+    if (error) throw new Error(`Could not upload ${originalName}: ${error.message}`);
+    uploaded.push({
+      sourceType: source.kind === 'text' ? 'pasted-text' : 'upload',
+      originalName,
+      mimeType,
+      storagePath,
+      sourceUrl: null,
+      contentSha256,
+      canonicalUrl: null,
+    });
   }
+  return uploaded;
 }
 
-/**
- * Deletes stored objects that no saved opportunity references any more. Paths are shared
- * (content-addressed), so a failed or duplicate save must never delete another row's file.
- */
+// Storage and PostgreSQL commit separately. Serialize changes to references and the corresponding objects.
+export async function lockSourceStorage(client: PoolClient) {
+  await client.query('SELECT pg_advisory_xact_lock(346242, 391)');
+}
+
 export async function removeStoredSources(paths: string[]): Promise<void> {
   if (paths.length === 0) return;
-  const referenced = await query<{ storage_path: string }>(
-    'SELECT DISTINCT storage_path FROM opportunity_sources WHERE storage_path = ANY($1)',
-    [paths],
-  );
-  const stillUsed = new Set(referenced.rows.map((row) => row.storage_path));
-  const orphaned = Array.from(new Set(paths)).filter((path) => !stillUsed.has(path));
-  if (orphaned.length === 0) return;
-  const client = getStorageClient();
-  const { error } = await client.storage.from(OPPORTUNITY_SOURCE_BUCKET).remove(orphaned);
-  if (error) console.error('Could not remove source objects:', error.message);
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    await lockSourceStorage(client);
+    const referenced = await client.query<{ storage_path: string }>(
+      'SELECT DISTINCT storage_path FROM opportunity_sources WHERE storage_path = ANY($1)', [paths],
+    );
+    const stillUsed = new Set(referenced.rows.map((row) => row.storage_path));
+    const orphaned = Array.from(new Set(paths)).filter((path) => !stillUsed.has(path));
+    if (orphaned.length > 0) {
+      const { error } = await getStorageClient().storage.from(OPPORTUNITY_SOURCE_BUCKET).remove(orphaned);
+      if (error) console.error('Could not remove source objects:', error.message);
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /** A short-lived link, created when the source is opened rather than when the page renders. */

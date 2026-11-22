@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isCalendarDate } from '@/lib/utils';
+import { PostingStatusSchema } from './workflow';
 
 export const opportunityCategories = ['job', 'internship', 'contest', 'higher-study'] as const;
 export const OpportunityCategorySchema = z.enum(opportunityCategories);
@@ -45,6 +46,7 @@ const commonOpportunityFields = {
     (value) => value === '' || value === undefined ? null : value,
     z.string().refine(isCalendarDate, 'Deadline must be a real date (YYYY-MM-DD).').nullable(),
   ).default(null),
+  postingStatus: PostingStatusSchema.optional(),
   organizationName: nullableText(500),
   organizationType: nullableText(200),
   location: nullableText(500),
@@ -102,6 +104,7 @@ export const EvidenceSchema = z.object({
   field: z.string().trim().min(1).max(200),
   sourceId: z.string().trim().min(1).max(200),
   excerpt: z.string().trim().max(500).default(''),
+  sourceLabel: z.string().max(2_000).optional(),
   confidence: z.enum(['high', 'medium', 'low']).default('medium'),
 });
 

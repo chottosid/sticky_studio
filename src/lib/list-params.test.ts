@@ -12,19 +12,18 @@ describe('parseListParams', () => {
     expect(parseListParams({ category: 'higher-study', status: 'past', sort: 'added', q: ' phd ' }))
       .toEqual({ category: 'higher-study', status: 'past', sort: 'added', q: 'phd' });
   });
-  it('restores separate applicant and tier filters, with a safe default for priority sorting', () => {
+  it('retains applicant selection from older links and uses the current sort', () => {
     expect(parseListParams({ candidate: 'archita', priority: 'P1', sort: 'priority' }))
-      .toEqual({ status: 'upcoming', sort: 'priority', q: '', candidate: 'archita', priority: 'P1' });
-    expect(parseListParams({ sort: 'priority', candidate: 'invalid' }).candidate).toBe('swarup');
-    expect(listHref(parseListParams({ candidate: 'archita', priority: 'P1' }))).toBe('/?candidate=archita&priority=P1');
+      .toEqual({ status: 'upcoming', sort: 'deadline', q: '', candidate: 'archita' });
+    expect(listHref(parseListParams({ candidate: 'archita' }))).toBe('/ledger?candidate=archita');
   });
 });
 
 describe('listHref', () => {
   it('omits defaults so the plain home URL means the default view', () => {
-    expect(listHref({ status: 'upcoming', sort: 'deadline', q: '' })).toBe('/');
+    expect(listHref({ status: 'upcoming', sort: 'deadline', q: '' })).toBe('/ledger');
     expect(listHref({ category: 'job', status: 'past', sort: 'added', q: 'data & ai' }))
-      .toBe('/?category=job&status=past&sort=added&q=data+%26+ai');
+      .toBe('/ledger?category=job&status=past&sort=added&q=data+%26+ai');
   });
 });
 

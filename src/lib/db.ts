@@ -1,11 +1,20 @@
 import 'server-only';
 import 'dotenv/config';
+import { existsSync, readFileSync } from 'node:fs';
 import { Pool } from 'pg';
 import type { QueryResult, QueryResultRow } from 'pg';
 
+const databaseUrl = process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL) : null;
+const local = databaseUrl && ['localhost', '127.0.0.1', '[::1]'].includes(databaseUrl.hostname);
+// pg connection-string SSL parameters override the ssl object when both are present.
+for (const option of ['sslmode', 'sslrootcert', 'sslcert', 'sslkey', 'ssl']) databaseUrl?.searchParams.delete(option);
+const localSupabaseCa = '.local/supabase-postgres-ca.crt';
+const ca = process.env.DATABASE_CA_CERT || (existsSync(localSupabaseCa) ? readFileSync(localSupabaseCa, 'utf8') : undefined);
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  connectionString: databaseUrl?.href,
+  ssl: local ? false : { rejectUnauthorized: true, ...(ca ? { ca: ca.replace(/\\n/g, '\n') } : {}) },
+  connectionTimeoutMillis: 10_000,
   // Each serverless instance keeps its own pool; a small one keeps warm instances
   // from exhausting the Supabase pooler's client limit.
   max: 3,

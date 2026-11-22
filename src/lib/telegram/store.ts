@@ -19,7 +19,7 @@ export type ProcessResult =
   | { status: 'ignored' }
   | { status: 'failed'; error: string };
 
-export type ClaimedRow = { id: number; message: TelegramMessage };
+export type ClaimedRow = { id: number; message: TelegramMessage; leaseToken: string };
 
 type Run = <Row extends QueryResultRow = QueryResultRow>(text: string, params?: readonly unknown[]) => Promise<QueryResult<Row>>;
 
@@ -101,20 +101,24 @@ export async function hasNewerPending(id: number, chatId: number, senderKey: str
 const CLAIM = (where: string) => `
   WITH picked AS (
     SELECT id FROM telegram_messages WHERE ${where} AND status = 'pending' FOR UPDATE SKIP LOCKED
-  ), head AS (SELECT max(id) AS id FROM picked)
+  ), head AS (SELECT max(id) AS id, gen_random_uuid() AS token FROM picked)
   UPDATE telegram_messages t
-  SET status = 'processing', updated_at = now(),
+  SET status = 'processing', updated_at = now(), attempts = attempts + 1, lease_token = head.token, retry_after = NULL,
       bundle_id = CASE WHEN t.id = head.id THEN NULL ELSE head.id END
   FROM picked, head
   WHERE t.id = picked.id
-  RETURNING t.id, t.message`;
+  RETURNING t.id, t.message, t.lease_token AS "leaseToken"`;
 
 const byPostingTime = (rows: ClaimedRow[]) =>
   rows.sort((a, b) => a.message.date - b.message.date || a.id - b.id);
 
 /** Takes every waiting message from one sender in one chat, oldest first. */
 export async function claimPendingFrom(chatId: number, senderKey: string): Promise<ClaimedRow[]> {
-  const result = await query<ClaimedRow>(CLAIM('chat_id = $1 AND sender_key = $2'), [chatId, senderKey]);
+  const result = await query<ClaimedRow>(CLAIM(`chat_id = $1 AND sender_key = $2 AND NOT EXISTS (
+    SELECT 1 FROM telegram_messages newer
+    WHERE newer.chat_id = $1 AND newer.sender_key = $2 AND newer.status = 'pending'
+      AND newer.created_at > now() - interval '60 seconds'
+  )`), [chatId, senderKey]);
   return byPostingTime(result.rows);
 }
 
@@ -124,31 +128,35 @@ export async function claimRows(ids: number[]): Promise<ClaimedRow[]> {
   return byPostingTime(result.rows);
 }
 
-async function recordWith(run: Run, ids: number[], result: ProcessResult): Promise<void> {
+async function recordWith(run: Run, ids: number[], result: ProcessResult, token?: string): Promise<void> {
   const head = ids[ids.length - 1];
   // Only claimed rows are updated, so a dismissal made meanwhile is never overwritten.
-  await run(
+  const updated = await run(
     `UPDATE telegram_messages
-     SET status = $2, draft = $3::jsonb, sources = $4::jsonb, error = $5, bundle_id = NULL, updated_at = now()
-     WHERE id = $1 AND status = 'processing'`,
+     SET status = $2, draft = $3::jsonb, sources = $4::jsonb, error = $5, bundle_id = NULL, updated_at = now(),
+       retry_after = CASE WHEN $2 = 'failed' AND attempts < 3 AND $6::uuid IS NOT NULL THEN now() + interval '5 minutes' END,
+       lease_token = NULL
+     WHERE id = $1 AND status = 'processing' AND lease_token IS NOT DISTINCT FROM $6::uuid`,
     [
       head,
       result.status,
       result.status === 'ready' ? JSON.stringify(result.draft) : null,
       result.status === 'ready' ? JSON.stringify(result.sources) : null,
       result.status === 'failed' ? result.error : null,
+      token ?? null,
     ],
   );
+  if (!updated.rowCount) return;
   await run(
-    `UPDATE telegram_messages SET status = 'merged', bundle_id = $1, updated_at = now()
-     WHERE id = ANY($2::int[]) AND id <> $1 AND status = 'processing'`,
-    [head, ids],
+    `UPDATE telegram_messages SET status = 'merged', bundle_id = $1, updated_at = now(), lease_token = NULL
+     WHERE id = ANY($2::int[]) AND id <> $1 AND status = 'processing' AND lease_token IS NOT DISTINCT FROM $3::uuid`,
+    [head, ids, token ?? null],
   );
 }
 
 /** The newest message (last id) carries the bundle's result; the others point to it as merged. */
-export async function recordBundleResult(ids: number[], result: ProcessResult): Promise<void> {
-  await inTransaction((run) => recordWith(run, ids, result));
+export async function recordBundleResult(ids: number[], result: ProcessResult, token: string): Promise<void> {
+  await inTransaction((run) => recordWith(run, ids, result, token));
 }
 
 export async function messageExists(chatId: number, messageId: number): Promise<boolean> {
@@ -235,21 +243,27 @@ export async function getReadyDraft(
  * Puts a failed or stalled bundle back in the queue and returns exactly its row ids.
  * Members are reset only when the head itself qualified, so a stale second click is a no-op.
  */
-export async function markForRetry(id: number): Promise<number[]> {
+export async function markForRetry(id: number, automatic = false): Promise<number[]> {
   const result = await query<{ id: number }>(
     `WITH head AS (
-       UPDATE telegram_messages SET status = 'pending', error = NULL, updated_at = now()
+       UPDATE telegram_messages SET status = 'pending', error = NULL, updated_at = now(),
+         retry_after = NULL, lease_token = NULL, attempts = CASE WHEN $2::boolean THEN attempts ELSE 0 END
        WHERE id = $1 AND bundle_id IS NULL
-         AND (status = 'failed'
-              OR (status IN ('pending', 'processing') AND updated_at < now() - interval '10 minutes'))
+         AND (
+           ($2::boolean AND attempts < 3 AND ((status = 'failed' AND retry_after <= now())
+             OR (status = 'processing' AND updated_at < now() - interval '6 minutes')))
+           OR (NOT $2::boolean AND (status = 'failed'
+             OR (status IN ('pending', 'processing') AND updated_at < now() - interval '10 minutes')))
+         )
        RETURNING id
      ), members AS (
-       UPDATE telegram_messages SET status = 'pending', updated_at = now()
+       UPDATE telegram_messages SET status = 'pending', updated_at = now(), lease_token = NULL,
+         attempts = CASE WHEN $2::boolean THEN attempts ELSE 0 END
        WHERE bundle_id = $1 AND status IN ('merged', 'processing', 'pending') AND EXISTS (SELECT 1 FROM head)
        RETURNING id
      )
      SELECT id FROM head UNION ALL SELECT id FROM members`,
-    [id],
+    [id, automatic],
   );
   return result.rows.map((row) => row.id);
 }
@@ -263,4 +277,20 @@ export async function closeInboxItem(id: number, status: 'saved' | 'dismissed'):
         OR (bundle_id = $1 AND status IN ('pending', 'processing'))`,
     [id, status],
   );
+}
+
+export async function nextInboxRecovery() {
+  const { rows } = await query<{ id: number; status: string; chat_id: string; sender_key: string }>(`
+    SELECT id, status, chat_id, sender_key FROM telegram_messages m
+    WHERE bundle_id IS NULL AND attempts < 3 AND (
+      (status = 'failed' AND retry_after <= now())
+      OR (status = 'processing' AND updated_at < now() - interval '6 minutes')
+      OR (status = 'pending' AND sender_key IS NOT NULL AND updated_at < now() - interval '65 seconds'
+        AND NOT EXISTS (SELECT 1 FROM telegram_messages recent WHERE recent.chat_id = m.chat_id
+          AND recent.sender_key = m.sender_key AND recent.status = 'pending'
+          AND recent.created_at > now() - interval '60 seconds'))
+    )
+    ORDER BY updated_at, id LIMIT 1
+  `);
+  return rows[0];
 }

@@ -111,6 +111,7 @@ export function OpportunityFormFields({ value, onChange, evidence = [], unresolv
       name: value.name,
       details: value.details,
       deadline: value.deadline,
+      postingStatus: value.postingStatus,
       organizationName: value.organizationName,
       organizationType: value.organizationType,
       location: value.location,
@@ -147,8 +148,20 @@ export function OpportunityFormFields({ value, onChange, evidence = [], unresolv
 
       <div className="space-y-2">
         {label('opportunity-deadline', 'Deadline (optional)', 'deadline')}
-        <Input id="opportunity-deadline" type="date" value={valueOrEmpty(value.deadline)} onChange={(event) => updateCommon('deadline', event.target.value || null)} />
+        <Input id="opportunity-deadline" type="date" disabled={value.postingStatus === 'rolling'} value={valueOrEmpty(value.deadline)} onChange={(event) => updateCommon('deadline', event.target.value || null)} />
       </div>
+
+      <label className="space-y-1 text-sm font-medium">
+        Posting status
+        <select value={value.postingStatus ?? 'unknown'} onChange={(event) => {
+          const postingStatus = event.target.value as OpportunityDraftValue['postingStatus'];
+          onChange({ ...value, postingStatus, deadline: postingStatus === 'rolling' ? null : value.deadline });
+        }} className="block h-10 w-full rounded-md border border-input bg-card px-3 text-sm font-normal">
+          <option value="unknown">Use deadline when provided</option>
+          <option value="rolling">Rolling intake</option>
+          <option value="closed">Closed</option>
+        </select>
+      </label>
 
       <div className="space-y-2">
         {label('organization-name', value.category === 'higher-study' ? 'University / institution' : value.category === 'contest' ? 'Organizer' : 'Company', 'organizationName')}
@@ -156,122 +169,127 @@ export function OpportunityFormFields({ value, onChange, evidence = [], unresolv
       </div>
 
       <div className="space-y-2">
-        {label('organization-type', 'Organization type', 'organizationType')}
-        <Input id="organization-type" value={valueOrEmpty(value.organizationType)} onChange={(event) => updateCommon('organizationType', event.target.value || null)} />
-      </div>
-
-      <div className="space-y-2">
-        {label('location', 'Location')}
-        <Input id="location" value={valueOrEmpty(value.location)} onChange={(event) => updateCommon('location', event.target.value || null)} />
-      </div>
-
-      <div className="space-y-2">
         {label('application-url', 'Application URL', 'applicationUrl')}
         <Input id="application-url" type="url" value={valueOrEmpty(value.applicationUrl)} onChange={(event) => updateCommon('applicationUrl', event.target.value || null)} />
       </div>
 
-      <div className="space-y-2">
-        {label('contact-email', 'Contact email', 'contactEmail')}
-        <Input id="contact-email" type="email" value={valueOrEmpty(value.contactEmail)} onChange={(event) => updateCommon('contactEmail', event.target.value || null)} />
-      </div>
-
-      {value.category === 'higher-study' && (
-        <>
-          <div className="space-y-2">
-            {label('program-name', 'Program / position', 'attributes.programName')}
-            <Input id="program-name" value={valueOrEmpty(value.attributes.programName)} onChange={(event) => updateAttribute('programName', event.target.value || null)} />
-          </div>
-          <div className="space-y-2">
-            {label('degree-level', 'Degree level', 'attributes.degreeLevel')}
-            <Input id="degree-level" value={valueOrEmpty(value.attributes.degreeLevel)} onChange={(event) => updateAttribute('degreeLevel', event.target.value || null)} />
-          </div>
-          <div className="space-y-2">
-            {label('department', 'Department', 'attributes.department')}
-            <Input id="department" value={valueOrEmpty(value.attributes.department)} onChange={(event) => updateAttribute('department', event.target.value || null)} />
-          </div>
-          <div className="space-y-2">
-            {label('lab-name', 'Lab / research group', 'attributes.labName')}
-            <Input id="lab-name" value={valueOrEmpty(value.attributes.labName)} onChange={(event) => updateAttribute('labName', event.target.value || null)} />
-          </div>
-          <div className="space-y-2 md:col-span-2">
-            {label('professor-names', 'Professor names (one per line)', 'attributes.professorNames')}
-            <ListTextarea id="professor-names" rows={2} value={value.attributes.professorNames} onChange={(list) => updateAttribute('professorNames', list)} />
-          </div>
-          <div className="space-y-2 md:col-span-2">
-            {label('research-areas', 'Research areas (one per line)', 'attributes.researchAreas')}
-            <ListTextarea id="research-areas" rows={2} value={value.attributes.researchAreas} onChange={(list) => updateAttribute('researchAreas', list)} />
-          </div>
-          <div className="space-y-2">
-            {label('funding', 'Funding / stipend', 'attributes.funding')}
-            <Input id="funding" value={valueOrEmpty(value.attributes.funding)} onChange={(event) => updateAttribute('funding', event.target.value || null)} />
-          </div>
-          <div className="space-y-2">
-            {label('start-term', 'Start term', 'attributes.startTerm')}
-            <Input id="start-term" value={valueOrEmpty(value.attributes.startTerm)} onChange={(event) => updateAttribute('startTerm', event.target.value || null)} />
-          </div>
-        </>
-      )}
-
-      {(value.category === 'job' || value.category === 'internship') && (
-        <>
-          <div className="space-y-2">
-            {label('role-title', 'Role title', 'attributes.roleTitle')}
-            <Input id="role-title" value={valueOrEmpty(value.attributes.roleTitle)} onChange={(event) => updateAttribute('roleTitle', event.target.value || null)} />
-          </div>
-          <div className="space-y-2">
-            {label('employment-type', 'Employment type', 'attributes.employmentType')}
-            <Input id="employment-type" value={valueOrEmpty(value.attributes.employmentType)} onChange={(event) => updateAttribute('employmentType', event.target.value || null)} />
-          </div>
-          <div className="space-y-2">
-            {label('workplace-mode', 'Workplace mode', 'attributes.workplaceMode')}
-            <Input id="workplace-mode" value={valueOrEmpty(value.attributes.workplaceMode)} onChange={(event) => updateAttribute('workplaceMode', event.target.value || null)} />
-          </div>
-          <div className="space-y-2">
-            {label('compensation', 'Compensation', 'attributes.compensation')}
-            <Input id="compensation" value={valueOrEmpty(value.attributes.compensation)} onChange={(event) => updateAttribute('compensation', event.target.value || null)} />
-          </div>
-          <div className="space-y-2 md:col-span-2">
-            {label('skills', 'Skills (one per line)', 'attributes.skills')}
-            <ListTextarea id="skills" rows={2} value={value.attributes.skills} onChange={(list) => updateAttribute('skills', list)} />
-          </div>
-          {value.category === 'internship' && (
-            <div className="space-y-2">
-              {label('duration', 'Duration', 'attributes.duration')}
-              <Input id="duration" value={valueOrEmpty(value.attributes.duration)} onChange={(event) => updateAttribute('duration', event.target.value || null)} />
-            </div>
-          )}
-        </>
-      )}
-
-      {value.category === 'contest' && (
-        <>
-          <div className="space-y-2">
-            {label('contest-theme', 'Theme', 'attributes.theme')}
-            <Input id="contest-theme" value={valueOrEmpty(value.attributes.theme)} onChange={(event) => updateAttribute('theme', event.target.value || null)} />
-          </div>
-          <div className="space-y-2">
-            {label('contest-prize', 'Prize', 'attributes.prize')}
-            <Input id="contest-prize" value={valueOrEmpty(value.attributes.prize)} onChange={(event) => updateAttribute('prize', event.target.value || null)} />
-          </div>
-          <div className="space-y-2">
-            {label('event-date', 'Event date', 'attributes.eventDate')}
-            <Input id="event-date" value={valueOrEmpty(value.attributes.eventDate)} onChange={(event) => updateAttribute('eventDate', event.target.value || null)} />
-          </div>
-        </>
-      )}
-
-      <div className="space-y-2 md:col-span-2">
-        {label('eligibility', 'Eligibility')}
-        <Textarea id="eligibility" rows={3} value={valueOrEmpty(value.eligibility)} onChange={(event) => updateCommon('eligibility', event.target.value || null)} />
-      </div>
-      <div className="space-y-2 md:col-span-2">
-        {label('requirements', 'Requirements (one per line)')}
-        <ListTextarea id="requirements" value={value.requirements} onChange={(list) => updateCommon('requirements', list)} />
-      </div>
       <div className="space-y-2 md:col-span-2">
         {label('details', 'Summary / notes')}
         <Textarea id="details" rows={6} value={value.details} onChange={(event) => updateCommon('details', event.target.value)} />
       </div>
+      <details className="rounded-lg border px-3 py-2 md:col-span-2">
+        <summary className="cursor-pointer text-sm font-medium">Requirements and optional details</summary>
+        <div className="mt-4 grid gap-5 md:grid-cols-2">
+          <div className="space-y-2">
+            {label('organization-type', 'Organization type', 'organizationType')}
+            <Input id="organization-type" value={valueOrEmpty(value.organizationType)} onChange={(event) => updateCommon('organizationType', event.target.value || null)} />
+          </div>
+
+          <div className="space-y-2">
+            {label('location', 'Location')}
+            <Input id="location" value={valueOrEmpty(value.location)} onChange={(event) => updateCommon('location', event.target.value || null)} />
+          </div>
+
+          <div className="space-y-2">
+            {label('contact-email', 'Contact email', 'contactEmail')}
+            <Input id="contact-email" type="email" value={valueOrEmpty(value.contactEmail)} onChange={(event) => updateCommon('contactEmail', event.target.value || null)} />
+          </div>
+
+          {value.category === 'higher-study' && (
+            <>
+              <div className="space-y-2">
+                {label('program-name', 'Program / position', 'attributes.programName')}
+                <Input id="program-name" value={valueOrEmpty(value.attributes.programName)} onChange={(event) => updateAttribute('programName', event.target.value || null)} />
+              </div>
+              <div className="space-y-2">
+                {label('degree-level', 'Degree level', 'attributes.degreeLevel')}
+                <Input id="degree-level" value={valueOrEmpty(value.attributes.degreeLevel)} onChange={(event) => updateAttribute('degreeLevel', event.target.value || null)} />
+              </div>
+              <div className="space-y-2">
+                {label('department', 'Department', 'attributes.department')}
+                <Input id="department" value={valueOrEmpty(value.attributes.department)} onChange={(event) => updateAttribute('department', event.target.value || null)} />
+              </div>
+              <div className="space-y-2">
+                {label('lab-name', 'Lab / research group', 'attributes.labName')}
+                <Input id="lab-name" value={valueOrEmpty(value.attributes.labName)} onChange={(event) => updateAttribute('labName', event.target.value || null)} />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                {label('professor-names', 'Professor names (one per line)', 'attributes.professorNames')}
+                <ListTextarea id="professor-names" rows={2} value={value.attributes.professorNames} onChange={(list) => updateAttribute('professorNames', list)} />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                {label('research-areas', 'Research areas (one per line)', 'attributes.researchAreas')}
+                <ListTextarea id="research-areas" rows={2} value={value.attributes.researchAreas} onChange={(list) => updateAttribute('researchAreas', list)} />
+              </div>
+              <div className="space-y-2">
+                {label('funding', 'Funding / stipend', 'attributes.funding')}
+                <Input id="funding" value={valueOrEmpty(value.attributes.funding)} onChange={(event) => updateAttribute('funding', event.target.value || null)} />
+              </div>
+              <div className="space-y-2">
+                {label('start-term', 'Start term', 'attributes.startTerm')}
+                <Input id="start-term" value={valueOrEmpty(value.attributes.startTerm)} onChange={(event) => updateAttribute('startTerm', event.target.value || null)} />
+              </div>
+            </>
+          )}
+
+          {(value.category === 'job' || value.category === 'internship') && (
+            <>
+              <div className="space-y-2">
+                {label('role-title', 'Role title', 'attributes.roleTitle')}
+                <Input id="role-title" value={valueOrEmpty(value.attributes.roleTitle)} onChange={(event) => updateAttribute('roleTitle', event.target.value || null)} />
+              </div>
+              <div className="space-y-2">
+                {label('employment-type', 'Employment type', 'attributes.employmentType')}
+                <Input id="employment-type" value={valueOrEmpty(value.attributes.employmentType)} onChange={(event) => updateAttribute('employmentType', event.target.value || null)} />
+              </div>
+              <div className="space-y-2">
+                {label('workplace-mode', 'Workplace mode', 'attributes.workplaceMode')}
+                <Input id="workplace-mode" value={valueOrEmpty(value.attributes.workplaceMode)} onChange={(event) => updateAttribute('workplaceMode', event.target.value || null)} />
+              </div>
+              <div className="space-y-2">
+                {label('compensation', 'Compensation', 'attributes.compensation')}
+                <Input id="compensation" value={valueOrEmpty(value.attributes.compensation)} onChange={(event) => updateAttribute('compensation', event.target.value || null)} />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                {label('skills', 'Skills (one per line)', 'attributes.skills')}
+                <ListTextarea id="skills" rows={2} value={value.attributes.skills} onChange={(list) => updateAttribute('skills', list)} />
+              </div>
+              {value.category === 'internship' && (
+                <div className="space-y-2">
+                  {label('duration', 'Duration', 'attributes.duration')}
+                  <Input id="duration" value={valueOrEmpty(value.attributes.duration)} onChange={(event) => updateAttribute('duration', event.target.value || null)} />
+                </div>
+              )}
+            </>
+          )}
+
+          {value.category === 'contest' && (
+            <>
+              <div className="space-y-2">
+                {label('contest-theme', 'Theme', 'attributes.theme')}
+                <Input id="contest-theme" value={valueOrEmpty(value.attributes.theme)} onChange={(event) => updateAttribute('theme', event.target.value || null)} />
+              </div>
+              <div className="space-y-2">
+                {label('contest-prize', 'Prize', 'attributes.prize')}
+                <Input id="contest-prize" value={valueOrEmpty(value.attributes.prize)} onChange={(event) => updateAttribute('prize', event.target.value || null)} />
+              </div>
+              <div className="space-y-2">
+                {label('event-date', 'Event date', 'attributes.eventDate')}
+                <Input id="event-date" value={valueOrEmpty(value.attributes.eventDate)} onChange={(event) => updateAttribute('eventDate', event.target.value || null)} />
+              </div>
+            </>
+          )}
+
+          <div className="space-y-2 md:col-span-2">
+            {label('eligibility', 'Eligibility')}
+            <Textarea id="eligibility" rows={3} value={valueOrEmpty(value.eligibility)} onChange={(event) => updateCommon('eligibility', event.target.value || null)} />
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            {label('requirements', 'Requirements (one per line)')}
+            <ListTextarea id="requirements" value={value.requirements} onChange={(list) => updateCommon('requirements', list)} />
+          </div>
+        </div>
+      </details>
     </div>
   );
 }
