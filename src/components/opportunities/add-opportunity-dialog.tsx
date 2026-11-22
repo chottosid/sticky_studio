@@ -208,7 +208,7 @@ export function AddOpportunityDialog({ inboxItem, reviewDraft, trigger, onSaved 
         {trigger ?? (
           <Button size="sm">
             <Plus aria-hidden />
-            <span>Add<span className="sr-only sm:not-sr-only"> opportunity</span></span>
+            <span>Add<span className="sr-only lg:not-sr-only"> opportunity</span></span>
           </Button>
         )}
       </DialogTrigger>
