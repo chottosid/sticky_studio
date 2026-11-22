@@ -6,16 +6,19 @@ import { query } from '@/lib/db';
 
 export const maxDuration = 90;
 
-export default async function AgentPage() {
+export default async function AgentPage({ searchParams }: { searchParams: Promise<{ opportunity?: string | string[] }> }) {
   if (!(await isAuthenticated())) redirect('/login');
   const { rows } = await query<{ id: number; name: string }>('SELECT id, name FROM opportunities ORDER BY name, id');
+  const { opportunity } = await searchParams;
+  const agentKey = process.env.OPENROUTER_AGENT_API_KEY;
 
   return (
     <>
-      <Header />
-      <main className="mx-auto max-w-4xl space-y-7 px-4 pb-16 pt-8 sm:px-6">
-        <h1 className="font-display text-3xl font-semibold tracking-tight">Agent</h1>
-        <AgentWorkspace opportunities={rows.map((row) => ({ id: String(row.id), name: row.name }))} />
+      <Header active="agent" />
+      <main className="mx-auto max-w-5xl px-2.5 py-3 sm:px-6 sm:py-7">
+        <AgentWorkspace opportunities={rows.map((row) => ({ id: String(row.id), name: row.name }))}
+          aiConfigured={Boolean(agentKey && agentKey !== process.env.OPENROUTER_API_KEY)}
+          initialOpportunityId={typeof opportunity === 'string' ? opportunity : undefined} />
       </main>
     </>
   );

@@ -47,12 +47,11 @@ export function TelegramInbox({ items }: { items: TelegramInboxItem[] }) {
   };
 
   return (
-    <section aria-labelledby="inbox-heading" className="rounded-lg border bg-card">
+    <section aria-labelledby="inbox-heading" className="rounded-2xl border bg-card shadow-sm">
       <div className="flex items-baseline justify-between gap-4 border-b px-4 py-3 sm:px-5">
         <h2 id="inbox-heading" className="font-semibold">
           From Telegram <span className="font-normal text-muted-foreground">{items.length} to review</span>
         </h2>
-        <p className="hidden text-sm text-muted-foreground sm:block">Nothing is saved until you review it.</p>
       </div>
       <ul className="divide-y">
         {(expanded ? items : items.slice(0, COLLAPSED_COUNT)).map((item) => {

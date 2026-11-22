@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
-import { ArrowLeft, ExternalLink, Mail, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Mail, Pencil, Sparkles, Trash2 } from 'lucide-react';
 import type { Opportunity } from '@/lib/types';
 import { opportunityCategoryLabels } from '@/domain/opportunity/config';
 import { Button } from '@/components/ui/button';
@@ -101,7 +102,7 @@ export default function OpportunityDetailView({ opportunity, today, profiles }: 
       : [];
 
   return (
-    <article className="mx-auto max-w-3xl">
+    <article className="mx-auto max-w-3xl rounded-3xl border bg-card p-5 shadow-sm sm:p-9">
       <Button variant="ghost" size="sm" onClick={goBack} className="-ml-3 text-muted-foreground">
         <ArrowLeft aria-hidden />
         All opportunities
@@ -137,6 +138,9 @@ export default function OpportunityDetailView({ opportunity, today, profiles }: 
               </a>
             </Button>
           )}
+          <Button asChild variant="outline">
+            <Link href={`/agent?opportunity=${opportunity.id}`} prefetch={false}><Sparkles aria-hidden /> Draft outreach</Link>
+          </Button>
         </div>
       </div>
 

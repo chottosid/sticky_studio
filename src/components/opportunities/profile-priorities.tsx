@@ -77,11 +77,11 @@ export function ProfileAssessmentControls({ profiles }: { profiles: ProfileSumma
     finally { setBusy(false); router.refresh(); }
   }
 
-  return <section className="rounded-xl border bg-card p-4 sm:p-5" aria-labelledby="profiles-heading">
+  return <section className="rounded-2xl border bg-card p-4 shadow-sm sm:p-5" aria-labelledby="profiles-heading">
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div>
-        <h2 id="profiles-heading" className="font-semibold">Your priorities, separately</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Portfolio-based fit and eligibility for Swarup and Archita. Tiers guide effort; they are not acceptance odds.</p>
+        <h2 id="profiles-heading" className="font-display text-lg font-semibold tracking-tight">Applicant profiles</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Portfolio evidence and preferences used to assess fit.</p>
       </div>
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(false)}>
@@ -91,7 +91,7 @@ export function ProfileAssessmentControls({ profiles }: { profiles: ProfileSumma
         {busy && <Button size="sm" variant="ghost" onClick={() => { stop.current = true; setMessage('Stopping after the current batch…'); }}>Stop</Button>}
       </div>
     </div>
-    <div className="mt-4 grid gap-4 sm:grid-cols-2">
+    <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
       {profiles.map((profile) => <ProfileNotes key={profile.id} profile={profile} disabled={busy} />)}
     </div>
     {message && <p role="status" aria-live="polite" className="mt-3 text-sm">{message}</p>}

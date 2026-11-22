@@ -30,18 +30,26 @@ export default async function Home({ searchParams }: Props) {
   return (
     <>
       <Header />
-      <main className="mx-auto max-w-5xl space-y-10 px-4 pb-16 pt-8 sm:px-6">
-        <TelegramInbox items={inbox} />
-        <ProfileAssessmentControls profiles={profiles} />
-        <OpportunityLedger
-          // Not keyed on the search text: typing must not remount the search box.
-          key={listHref({ ...params, q: '' })}
-          params={params}
-          initialItems={opportunities}
-          total={total}
-          today={appToday()}
-          profiles={profiles}
-        />
+      <main className="mx-auto grid max-w-6xl items-start gap-6 px-4 pb-16 pt-7 sm:px-6 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_18.5rem] lg:grid-rows-[auto_1fr]">
+        {inbox.length > 0 && (
+          <div className="min-w-0 lg:col-start-2 lg:row-start-1 lg:pt-2">
+            <TelegramInbox items={inbox} />
+          </div>
+        )}
+        <div className="min-w-0 lg:col-start-1 lg:row-span-2 lg:row-start-1">
+          <OpportunityLedger
+            // Not keyed on the search text: typing must not remount the search box.
+            key={listHref({ ...params, q: '' })}
+            params={params}
+            initialItems={opportunities}
+            total={total}
+            today={appToday()}
+            profiles={profiles}
+          />
+        </div>
+        <aside aria-label="Applicant settings" className={inbox.length ? 'min-w-0 lg:col-start-2 lg:row-start-2' : 'min-w-0 lg:col-start-2 lg:row-start-1 lg:pt-2'}>
+          <ProfileAssessmentControls profiles={profiles} />
+        </aside>
       </main>
     </>
   );

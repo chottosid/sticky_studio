@@ -111,12 +111,13 @@ export async function researchOpportunities(search: string, candidate: Candidate
   return proposals.map(({ key, proposal }) => ({ ...proposal, existing: existing.get(key) ?? null }));
 }
 
-export async function outreachDraft(candidate: CandidateId, id: string) {
+export async function outreachDraft(candidate: CandidateId, id: string, instructions?: string, previousDraft?: { subject: string; body: string }) {
   const [opportunity, profiles] = await Promise.all([getOpportunityById(id, { includeLegacyDocument: false }), getCandidateProfiles()]);
   const profile = profiles.find((item) => item.id === candidate);
   if (!opportunity || !profile) return null;
 
   const draft = await draftOutreach({
+    instructions, previousDraft,
     applicant: { name: profile.name, portfolio: profile.website, evidence: sliceText(profile.text, 12_000), notes: sliceText(profile.additionalContext, 3_000) },
     opportunity: { name: opportunity.name, organization: opportunity.organizationName, details: sliceText(opportunity.details, 5_000),
       advisors: opportunity.category === 'higher-study' ? opportunity.attributes.professorNames : [], source: opportunity.applicationUrl },

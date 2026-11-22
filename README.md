@@ -14,7 +14,7 @@ The development server runs at <http://localhost:9002>.
 
 ## Agent
 
-Open **Agent** from the signed-in header. **Plan my week** ranks saved opportunities for the selected applicant using their deadlines and current assessments. **Research** returns public source links and opens proposals in the standard review form. **Draft outreach** uses a saved opportunity and the selected applicant's evidence and provides a copyable subject and body for manual sending.
+Open **Agent** from the signed-in header. Ask “What’s due this week?” to rank saved opportunities using the selected applicant's deadlines and current assessments. Ask “Find funded PhDs in computer vision” for linked sources and proposals you can review before saving. Ask “Draft a cold email” and choose a saved opportunity, or start from **Draft outreach** on its detail page. Copy the draft for manual sending or refine it in the conversation with a request such as “Make it shorter.” The conversation stays in the current Agent page session.
 
 Research and drafting use `OPENROUTER_AGENT_API_KEY`, a separate server-side OpenRouter key with a monthly credit limit. The optional `OPENROUTER_AGENT_MODEL` defaults to `google/gemini-2.5-flash-lite`. Start a private chat with the configured Telegram bot using `/start` to receive deadline reminders.
 

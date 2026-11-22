@@ -5,11 +5,21 @@ import { isCalendarDate, isNumericId } from '@/lib/utils';
 
 const request = z.object({ candidate: CandidateIdSchema });
 
+export const OutreachOutputSchema = z.object({
+  subject: z.string().trim().min(1).max(200),
+  body: z.string().trim().min(1).max(4_000),
+});
+
 export const AgentRequestSchema = z.discriminatedUnion('kind', [
   request.extend({ kind: z.literal('week') }),
   request.extend({ kind: z.literal('research'), query: z.string().trim().min(3).max(500) }),
-  request.extend({ kind: z.literal('outreach'), opportunityId: z.string().refine(isNumericId) }),
+  request.extend({
+    kind: z.literal('outreach'), opportunityId: z.string().refine(isNumericId),
+    instructions: z.string().trim().max(500).optional(), previousDraft: OutreachOutputSchema.optional(),
+  }),
 ]);
+
+export type AgentRequest = z.infer<typeof AgentRequestSchema>;
 
 export const ResearchOutputSchema = z.object({
   opportunities: z.array(z.object({
@@ -21,11 +31,6 @@ export const ResearchOutputSchema = z.object({
     deadline: z.string().refine(isCalendarDate).nullable(),
     contactEmail: z.string().email().max(320).nullable(),
   })).max(5),
-});
-
-export const OutreachOutputSchema = z.object({
-  subject: z.string().trim().min(1).max(200),
-  body: z.string().trim().min(1).max(4_000),
 });
 
 export type WeeklyTask = {

@@ -20,7 +20,7 @@ export async function runAgent(input: unknown): Promise<
       case 'research':
         return { success: true, result: { kind: 'research', proposals: await researchOpportunities(request.query, request.candidate) } };
       case 'outreach': {
-        const draft = await outreachDraft(request.candidate, request.opportunityId);
+        const draft = await outreachDraft(request.candidate, request.opportunityId, request.instructions, request.previousDraft);
         if (!draft) return { success: false, message: 'The opportunity or applicant is unavailable.' };
         return { success: true, result: { kind: 'outreach', ...draft } };
       }

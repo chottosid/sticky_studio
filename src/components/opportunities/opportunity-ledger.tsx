@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { format, parseISO } from 'date-fns';
-import { Loader2, Search, X } from 'lucide-react';
+import { ArrowUpRight, Loader2, Search, X } from 'lucide-react';
 import { opportunityCategoryLabels, opportunityCategoryOptions } from '@/domain/opportunity/config';
 import { getOpportunitiesAction } from '@/lib/actions';
 import { deadlineGroup, deadlineGroupLabels } from '@/lib/deadlines';
@@ -110,13 +110,13 @@ export function OpportunityLedger({ params, initialItems, total, today, profiles
   const scope = params.category ? pluralLabels[params.category].toLowerCase() : 'opportunities';
 
   return (
-    <section aria-labelledby="ledger-heading" className="space-y-5">
+    <section aria-labelledby="ledger-heading" className="min-w-0 space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-        <h1 id="ledger-heading" className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
-          {params.status === 'past' ? 'Closed' : 'Upcoming'}{' '}
-          <span className="text-muted-foreground">{total}</span>
-        </h1>
-        <div className="flex items-center gap-1 rounded-lg bg-secondary p-1 text-sm" role="group" aria-label="Show">
+        <div>
+          <h1 id="ledger-heading" className="font-display text-4xl font-semibold tracking-tight sm:text-[2.7rem]">Opportunities</h1>
+          <p className="mt-1 text-sm text-muted-foreground" aria-live="polite">{total} {params.status === 'past' ? 'closed' : 'upcoming'} {total === 1 ? 'opportunity' : 'opportunities'}</p>
+        </div>
+        <div className="flex items-center gap-1 rounded-xl border bg-secondary/60 p-1 text-sm" role="group" aria-label="Show">
           {(['upcoming', 'past'] as const).map((status) => (
             <Link
               key={status}
@@ -134,97 +134,99 @@ export function OpportunityLedger({ params, initialItems, total, today, profiles
         </div>
       </div>
 
-      <nav aria-label="Category" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-        <ul className="flex min-w-max gap-1 border-b">
-          {[{ value: undefined, label: 'All' }, ...opportunityCategoryOptions.map((option) => ({ value: option.value, label: pluralLabels[option.value] }))]
-            .map((option) => {
-              const active = params.category === option.value;
-              return (
-                <li key={option.label}>
-                  <Link
-                    href={listHref({ ...params, category: option.value })}
-                    scroll={false}
-                    aria-current={active ? 'page' : undefined}
-                    className={cn(
-                      '-mb-px inline-block border-b-2 border-transparent px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground',
-                      active && 'border-foreground text-foreground',
-                    )}
-                  >
-                    {option.label}
-                  </Link>
-                </li>
-              );
-            })}
-        </ul>
-      </nav>
+      <div className="space-y-3 rounded-2xl border bg-card p-3 shadow-sm sm:p-4">
+        <nav aria-label="Category" className="overflow-x-auto">
+          <ul className="flex min-w-max gap-1">
+            {[{ value: undefined, label: 'All' }, ...opportunityCategoryOptions.map((option) => ({ value: option.value, label: pluralLabels[option.value] }))]
+              .map((option) => {
+                const active = params.category === option.value;
+                return (
+                  <li key={option.label}>
+                    <Link
+                      href={listHref({ ...params, category: option.value })}
+                      scroll={false}
+                      aria-current={active ? 'page' : undefined}
+                      className={cn(
+                        'inline-block rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground',
+                        active && 'bg-accent font-semibold text-accent-foreground',
+                      )}
+                    >
+                      {option.label}
+                    </Link>
+                  </li>
+                );
+              })}
+          </ul>
+        </nav>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input
-            type="text"
-            inputMode="search"
-            enterKeyHint="search"
-            aria-label={`Search ${scope}`}
-            placeholder={`Search ${scope}`}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className="bg-card pl-9 pr-9"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery('')}
-              aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <Input
+              type="text"
+              inputMode="search"
+              enterKeyHint="search"
+              aria-label={`Search ${scope}`}
+              placeholder={`Search ${scope}`}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="bg-card pl-9 pr-9"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            Sort by
+            <select
+              value={params.sort}
+              onChange={(event) => navigate({ sort: event.target.value as ListParams['sort'] })}
+              className="h-10 rounded-md border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <X className="h-4 w-4" />
-            </button>
-          )}
+              <option value="deadline">Deadline</option>
+              <option value="added">Recently added</option>
+              <option value="priority">Profile priority</option>
+            </select>
+          </label>
         </div>
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          Sort by
-          <select
-            value={params.sort}
-            onChange={(event) => navigate({ sort: event.target.value as ListParams['sort'] })}
-            className="h-10 rounded-md border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="deadline">Deadline</option>
-            <option value="added">Recently added</option>
-            <option value="priority">Profile priority</option>
-          </select>
-        </label>
-      </div>
 
-      <div className="flex flex-wrap items-center gap-3 text-sm">
-        <label className="flex items-center gap-2 text-muted-foreground">
-          Priorities for
-          <select aria-label="Priorities for" value={params.candidate || 'both'} className="h-9 rounded-md border bg-card px-2 text-foreground"
-            onChange={(event) => {
-              const value = event.target.value;
-              navigate(value === 'both' ? { candidate: undefined, priority: undefined, sort: params.sort === 'priority' ? 'deadline' : params.sort }
-                : { candidate: value as CandidateId });
-            }}>
-            <option value="both">Both profiles</option>
-            {candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
-          </select>
-        </label>
-        <label className="flex items-center gap-2 text-muted-foreground">
-          Tier
-          <select aria-label="Priority tier" value={params.priority || 'all'} disabled={!params.candidate}
-            className="h-9 rounded-md border bg-card px-2 text-foreground disabled:opacity-50"
-            onChange={(event) => navigate({ priority: event.target.value === 'all' ? undefined : event.target.value as PriorityTier })}>
-            <option value="all">All priorities</option>
-            {priorityTiers.map((tier) => <option key={tier} value={tier}>{priorityLabels[tier]}</option>)}
-          </select>
-        </label>
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <label className="flex items-center gap-2 text-muted-foreground">
+            Priorities for
+            <select aria-label="Priorities for" value={params.candidate || 'both'} className="h-9 rounded-md border bg-card px-2 text-foreground"
+              onChange={(event) => {
+                const value = event.target.value;
+                navigate(value === 'both' ? { candidate: undefined, priority: undefined, sort: params.sort === 'priority' ? 'deadline' : params.sort }
+                  : { candidate: value as CandidateId });
+              }}>
+              <option value="both">Both profiles</option>
+              {candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-muted-foreground">
+            Tier
+            <select aria-label="Priority tier" value={params.priority || 'all'} disabled={!params.candidate}
+              className="h-9 rounded-md border bg-card px-2 text-foreground disabled:opacity-50"
+              onChange={(event) => navigate({ priority: event.target.value === 'all' ? undefined : event.target.value as PriorityTier })}>
+              <option value="all">All priorities</option>
+              {priorityTiers.map((tier) => <option key={tier} value={tier}>{priorityLabels[tier]}</option>)}
+            </select>
+          </label>
+        </div>
       </div>
 
       <div aria-busy={isNavigating} className={cn('transition-opacity', isNavigating && 'opacity-60')}>
         {items.length === 0 ? (
           <EmptyState params={params} scope={scope} />
         ) : (
-          <ol className="divide-y border-y">
+          <ol className="divide-y overflow-hidden rounded-2xl border bg-card shadow-sm">
             {items.map((item, index) => {
               const group = deadlineGroup(item.deadline, today);
               const previous = items[index - 1];
@@ -232,7 +234,7 @@ export function OpportunityLedger({ params, initialItems, total, today, profiles
               return (
                 <React.Fragment key={item.id}>
                   {startsGroup && params.status === 'upcoming' && (
-                    <li className="bg-background pb-2 pt-6 text-sm font-semibold text-muted-foreground first:pt-4">
+                    <li className="bg-secondary/50 px-4 py-2.5 text-xs font-semibold text-muted-foreground sm:px-5">
                       {deadlineGroupLabels[group]}
                     </li>
                   )}
@@ -267,13 +269,13 @@ function LedgerRow({ item, today, profiles }: { item: Opportunity; today: string
       onClick={() => {
         try { sessionStorage.setItem(LIST_RETURN_KEY, item.id); } catch { /* storage blocked: back goes home */ }
       }}
-      className="group grid grid-cols-[4.5rem_1fr] gap-x-4 px-1 py-4 transition-colors hover:bg-card focus-visible:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[5rem_1fr_auto] sm:px-3"
+      className="group grid grid-cols-[4.25rem_minmax(0,1fr)] gap-x-3 px-4 py-4 transition-colors hover:bg-accent/60 focus-visible:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[5rem_minmax(0,1fr)_auto] sm:gap-x-4 sm:px-5"
     >
       <div className="pt-0.5">
         <DeadlineMark deadline={item.deadline} today={today} />
       </div>
       <div className="min-w-0">
-        <p className="font-semibold leading-snug group-hover:text-primary">{item.name}</p>
+        <p className="break-words font-semibold leading-snug group-hover:text-primary">{item.name}</p>
         {org && <p className="mt-0.5 truncate text-sm text-muted-foreground">{org}</p>}
         <OpportunityPriorityBadges opportunity={item} profiles={profiles} />
         <p className="mt-1 text-xs text-muted-foreground sm:hidden">
@@ -283,7 +285,10 @@ function LedgerRow({ item, today, profiles }: { item: Opportunity; today: string
       </div>
       <div className="hidden text-right text-sm sm:block">
         <p className="text-muted-foreground">{opportunityCategoryLabels[item.category]}</p>
-        {item.deadline && <p className="mt-0.5 tabular-nums">{format(parseISO(item.deadline), 'd MMM yyyy')}</p>}
+        <p className="mt-0.5 flex items-center justify-end gap-1.5 tabular-nums">
+          {item.deadline && format(parseISO(item.deadline), 'd MMM yyyy')}
+          <ArrowUpRight size={14} aria-hidden className="text-muted-foreground/70 group-hover:text-primary" />
+        </p>
       </div>
     </Link>
   );
@@ -293,7 +298,7 @@ function EmptyState({ params, scope }: { params: ListParams; scope: string }) {
   let message = params.status === 'past' ? `No closed ${scope} yet.` : `Nothing upcoming in ${scope}.`;
   if (params.q) message = `No ${params.status === 'past' ? 'closed' : 'upcoming'} ${scope} match “${params.q}”.`;
   return (
-    <div className="border-y py-16 text-center">
+    <div className="rounded-2xl border bg-card px-4 py-14 text-center shadow-sm">
       <p className="font-medium">{message}</p>
       <p className="mt-1 text-sm text-muted-foreground">
         {params.q

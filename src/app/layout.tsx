@@ -8,7 +8,7 @@ const sans = Instrument_Sans({ subsets: ['latin'], variable: '--font-sans' });
 const display = Bricolage_Grotesque({ subsets: ['latin'], variable: '--font-display' });
 
 export const metadata: Metadata = {
-  title: 'Opportunity Oasis',
+  title: 'Sticky Studio',
   description: 'Jobs, internships, graduate positions and contests, ordered by deadline.',
 };
 
