@@ -19,8 +19,11 @@ async function main() {
     console.log(JSON.stringify(records.map((r) => ({ key: r.auditKey, name: r.opportunity.name, deadline: r.opportunity.deadline, sources: r.sourceUrls.length })), null, 2));
     return;
   }
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false });
+  const dbUrl = new URL(process.env.DATABASE_URL);
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(dbUrl.hostname);
+  // Verify TLS for hosted databases using the CA saved under .local/ (see AGENTS.md).
+  const ssl = local ? false : { ca: await fs.readFile(path.join(__dirname, '..', '.local', 'supabase-postgres-ca.crt'), 'utf8') };
+  const pool = new Pool({ connectionString: dbUrl.href, ssl });
   const client = await pool.connect();
   let inserted = 0; let matched = 0; let skipped = 0;
   try {
@@ -48,10 +51,10 @@ async function main() {
         } else {
           const result = await client.query(`INSERT INTO opportunities
             (name,details,deadline,category,organization_name,organization_type,location,application_url,contact_email,
-             eligibility,requirements,attributes,document_uri,document_type)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,'','unknown') RETURNING id`,
+             eligibility,requirements,attributes,document_uri,document_type,posting_status)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,'','unknown',$13) RETURNING id`,
           [o.name,o.details,o.deadline,o.category,o.organizationName,o.organizationType,o.location,o.applicationUrl,o.contactEmail,
-            o.eligibility,JSON.stringify(o.requirements),JSON.stringify(o.attributes)]);
+            o.eligibility,JSON.stringify(o.requirements),JSON.stringify(o.attributes),o.postingStatus ?? 'unknown']);
           id = result.rows[0].id; inserted += 1;
         }
         for (const url of new Set(record.sourceUrls)) {

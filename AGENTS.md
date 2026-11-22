@@ -68,6 +68,19 @@ The authenticated opportunity detail shows both applicants' application stages a
 
 The research CLI continues to provide scoped access to the opportunity and its sources. Use the signed-in app for personal progress or current fit unless authorized owner access is explicitly needed.
 
+## Reliable research sources
+
+Web search quota runs out quickly, so start from these sources and fetch pages directly. Treat them as leads. Every opportunity still needs a primary-page check of its official posting for the deadline and funding before it goes into the ledger.
+
+Run `node scripts/research-sources.js` to cache the data under the ignored `.local/research-sources/` folder, and to build `us-faculty-active.csv` there. The data is CC BY-NC-ND, so use it for research only and never commit or redistribute it.
+
+1. **CSrankings** ([csrankings.org](https://csrankings.org), data in [emeryberger/CSrankings](https://github.com/emeryberger/CSrankings), branch `gh-pages`). Faculty with homepages (`csrankings-a..z.csv`) and per-area publication counts (`generated-author-info.csv`). `us-faculty-active.csv` joins them into US faculty active since 2022, with homepage, top areas, and a score. Use it to pick professors, then read their lab pages for "prospective students" or "recruiting" text. It has no open-position data.
+2. **CSStipendRankings** ([csstipendrankings.org](https://csstipendrankings.org), data in [CSStipendRankings/CSStipendRankings](https://github.com/CSStipendRankings/CSStipendRankings)). `stipend-us.csv` has the stipend, fees, and summer funding per US department. `fellowship-us.csv` lists major fellowships. Use it to back a funding claim, but the data is community-submitted. The site that people often call "csstipend.org" does not exist.
+3. **Department recruiting pages** list faculty who are taking students for the cycle, for example [CU Boulder](https://www.colorado.edu/cs/admissions/graduate-admissions/see-who-recruiting), [UT Austin](https://www.cs.utexas.edu/faculty/recruiting), and Vanderbilt and UAB PhD pages. These are the best source for named-professor openings in the US.
+4. **GitHub lists for remote and RA roles**: [BryanBradfo/ai-residency-programs](https://github.com/BryanBradfo/ai-residency-programs) (cached as `ai-residency-programs.md`) and [speedyapply/2026-AI-College-Jobs](https://github.com/speedyapply/2026-AI-College-Jobs). Many entries require current student status or work authorization, so check eligibility on the posting. For company roles, fetch the Greenhouse, Lever, or Ashby job boards directly.
+
+Do not open `csphdfellowships.org`, because it redirects to an unrelated host with a token. Its GitHub CSV (`csphdfellowships.csv`) is usable but dates from August 2024.
+
 ## Saving reviewed research
 
 When asked to write, use the existing [research import script](scripts/import-opportunity-research.js) for reviewed leads. It takes a JSON array of `{ auditKey, opportunity, sourceUrls, findings }` records and validates each `opportunity` against `src/domain/opportunity/schema.ts`. Use a stable, unique `auditKey` and include the original announcement links. Run `node scripts/import-opportunity-research.js reviewed.json` for a dry run. Add `--apply` for the authorized write. This CLI loads `.env` unless `DATABASE_URL` already exists in the shell, so verify the target before applying.
