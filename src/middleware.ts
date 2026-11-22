@@ -9,7 +9,7 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const authenticated = await verifySessionToken(session?.value);
 
-  const isProtectedRoute = pathname === '/' || pathname === '/agent' || pathname.startsWith('/opportunity');
+  const isProtectedRoute = pathname === '/' || pathname === '/agent' || pathname.startsWith('/opportunity') || pathname.startsWith('/labs');
 
   if (!authenticated && isProtectedRoute) {
     const absoluteURL = new URL(AUTH_ROUTE, request.url);

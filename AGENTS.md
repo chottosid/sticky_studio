@@ -10,6 +10,8 @@ From the repository root, use the scoped database login and the research CLI. Th
 npm run db:research -- list
 npm run db:research -- list 'geometric deep learning'
 npm run db:research -- show 42
+npm run db:research -- organizations 'johns hopkins'
+npm run db:research -- professors 'reinforcement learning'
 npm run db:research -- profile swarup
 ```
 
@@ -56,6 +58,8 @@ NODE
 
 - `opportunities` stores the main record. `requirements`, `attributes`, and `profile_assessments` are JSONB. `deadline` is an app-timezone calendar date and can be `NULL`. The research login grants selected columns, so name the columns in a query.
 - `opportunity_sources` joins to `opportunities.id` through `opportunity_id`. Check `canonical_url` and `content_sha256` along with the opportunity's `application_url` to detect duplicates. Files with `storage_path` are private. Open them in the signed-in app at `/api/sources/<source-id>`.
+- `organizations` has one row per university or company (`name`, normalized `name_key`, `alias_keys`, `country`, `website`). `opportunities.organization_id` points to it, and `organization_name` stays as the free-text original. Resolve a name with `resolveOrganization` in `src/lib/organizations.ts`, which strips department suffixes and folds spellings such as "Univ. of Maryland - College Park".
+- `professors` tracks people per university (`organization_id`, `department`, `homepage`, `scholar_url`, `research_areas`, `recruiting_status` of unknown/taking/not_taking, `recruiting_checked_on`, `recruiting_source_url`). `opportunity_professors` links them to openings, since some openings name co-supervisors. `notes` on both tables are private to the app. Set `recruiting_status` only after checking the lab or department page, and record the source URL and date.
 - `candidate_profiles` provides the two independent public portfolio snapshots. Use the requested applicant's profile. Assessments may require review when the profile hash, opportunity revision, or policy version changes.
 
 ## Applicant workflow data
@@ -83,6 +87,6 @@ Do not open `csphdfellowships.org`, because it redirects to an unrelated host wi
 
 ## Saving reviewed research
 
-When asked to write, use the existing [research import script](scripts/import-opportunity-research.js) for reviewed leads. It takes a JSON array of `{ auditKey, opportunity, sourceUrls, findings }` records and validates each `opportunity` against `src/domain/opportunity/schema.ts`. Use a stable, unique `auditKey` and include the original announcement links. Run `node scripts/import-opportunity-research.js reviewed.json` for a dry run. Add `--apply` for the authorized write. This CLI loads `.env` unless `DATABASE_URL` already exists in the shell, so verify the target before applying.
+When asked to write, use the existing [research import script](scripts/import-opportunity-research.js) for reviewed leads. It takes a JSON array of `{ auditKey, opportunity, sourceUrls, findings }` records, links each new row to its organization and named professors, and validates each `opportunity` against `src/domain/opportunity/schema.ts`. Use a stable, unique `auditKey` and include the original announcement links. Run `node scripts/import-opportunity-research.js reviewed.json` for a dry run. Add `--apply` for the authorized write. This CLI loads `.env` unless `DATABASE_URL` already exists in the shell, so verify the target before applying.
 
 Keep outreach drafts in the app or your response for the user to send manually. Use the public announcement to verify dates and contact details and flag any that remain uncertain.

@@ -130,3 +130,16 @@ The repository pins Vercel Functions to Singapore (`sin1`) for the Singapore Sup
 For research and outreach, add `OPENROUTER_AGENT_API_KEY` in Vercel. Use a separate OpenRouter key with a positive monthly credit limit. Verify the chosen `OPENROUTER_AGENT_MODEL` with a sample research request that returns source links and an outreach draft. **Plan my week** uses the database directly.
 
 Start a private chat with the bot from the account identified by `TELEGRAM_OWNER_ID`. The daily reminder cron sends applicant-specific follow-ups and 7-, 3-, and 1-day deadline messages. Set `NEXT_PUBLIC_BASE_URL` if reminder links should use a custom domain. Confirm a test reminder in staging and remove the retired `SMTP_*` and `RECIPIENT_EMAILS` settings from the deployment.
+
+## Universities and professors (migration 010)
+
+Run `npm run db:migrate` **before** deploying this release (adds `010_organizations_professors.sql`). The opportunity pages and every save read or write `organizations`, `professors` and `opportunities.organization_id`, so the new code fails on a database without them. The migration is additive: `organization_name` and `professorNames` stay on each opportunity, and it preserves the scoped research login, which gains read access to the new tables except their `notes` columns.
+
+After migrating, link the existing rows once. Review the mapping first, then apply:
+
+```bash
+node scripts/backfill-organizations.js              # read-only; writes .local/organization-mapping.json
+node scripts/backfill-organizations.js --apply      # links organizations and professors; deletes nothing
+```
+
+Run `--apply` once, after the mapping looks right. A second run with changed naming rules leaves the earlier organization behind rather than merging it. To roll back, redeploy the previous build; the new tables and column do not affect it.

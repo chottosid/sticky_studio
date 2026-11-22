@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { format, parseISO } from 'date-fns';
 import { ArrowLeft, ExternalLink, Mail, Pencil, Trash2 } from 'lucide-react';
@@ -90,7 +91,6 @@ export default function OpportunityDetailView({ opportunity, today, applicants, 
   // Back to the filtered list this was opened from; a shared link or new tab goes home instead.
   const goBack = () => (openedFromList.current ? router.back() : router.push('/ledger'));
 
-  const place = [opportunity.organizationName, opportunity.location].filter(Boolean).join(', ');
   const shownFacts = facts(opportunity).filter((fact) => hasValue(fact.value));
   const sources = [
     ...opportunity.sources.map((source) => ({
@@ -113,7 +113,12 @@ export default function OpportunityDetailView({ opportunity, today, applicants, 
       <header className="mt-6 space-y-3">
         <p className="text-sm text-muted-foreground">{opportunityCategoryLabels[opportunity.category]}</p>
         <h1 className="font-display text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">{opportunity.name}</h1>
-        {place && <p className="text-lg text-muted-foreground">{place}</p>}
+        {(opportunity.organizationName || opportunity.location) && <p className="text-lg text-muted-foreground">
+          {opportunity.organizationName && (opportunity.organizationId
+            ? <Link href={`/labs/${opportunity.organizationId}`} className="underline-offset-4 hover:text-primary hover:underline">{opportunity.organizationName}</Link>
+            : opportunity.organizationName)}
+          {opportunity.organizationName && opportunity.location && ', '}{opportunity.location}
+        </p>}
       </header>
 
       <div className="mt-8 flex flex-wrap items-end justify-between gap-6 border-y py-5">

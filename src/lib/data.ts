@@ -14,6 +14,7 @@ import { canonicalizeUrl } from './duplicate-normalization';
 import { parseAssessments, type CandidateId } from '@/domain/opportunity/assessment';
 
 import { applicantOpportunities } from './applicant-workflow';
+import { syncOpportunityLinks } from './organizations';
 
 type Queryable = Pick<PoolClient, 'query'>;
 
@@ -21,7 +22,7 @@ const SELECT_COLUMNS = `
   id, name, details, deadline, category,
   organization_name, organization_type, location, application_url, contact_email,
   eligibility, requirements, attributes, created_at, updated_at,
-  profile_assessments, content_revision, posting_status, field_evidence
+  profile_assessments, content_revision, posting_status, field_evidence, organization_id
 `;
 const DETAIL_COLUMNS = `${SELECT_COLUMNS}, document_uri, document_type`;
 
@@ -54,6 +55,7 @@ function mapOpportunityRow(row: Record<string, unknown>): Opportunity {
     sources: [],
     created_at: row.created_at ? String(row.created_at) : undefined,
     updated_at: row.updated_at ? String(row.updated_at) : undefined,
+    organizationId: row.organization_id ? String(row.organization_id) : null,
     contentRevision: Number(row.content_revision || 1),
     profileAssessments: parseAssessments(parseJsonValue(row.profile_assessments, {})),
     fieldEvidence: Array.isArray(row.field_evidence) ? row.field_evidence : [],
@@ -178,6 +180,7 @@ export async function insertOpportunity(
     ],
   );
   const id = String(result.rows[0].id);
+  await syncOpportunityLinks(client, id, opportunity);
   for (const source of sources) await insertSource(client, id, source);
 
   const seen = new Set<string>();
@@ -217,26 +220,39 @@ async function insertSource(
 export async function updateOpportunity(id: string, input: OpportunityInput): Promise<Opportunity | null> {
   if (!isNumericId(id)) return null;
   const opportunity = OpportunityInputSchema.parse(input);
-  const result = await query(
-    `UPDATE opportunities SET
-      name = $1, details = $2, deadline = $3, category = $4,
-      organization_name = $5, organization_type = $6, location = $7,
-      application_url = $8, contact_email = $9, eligibility = $10,
-      requirements = $11::jsonb, attributes = $12::jsonb,
-      reminder_7_sent = CASE WHEN deadline IS DISTINCT FROM $3::date THEN FALSE ELSE reminder_7_sent END,
-      reminder_3_sent = CASE WHEN deadline IS DISTINCT FROM $3::date THEN FALSE ELSE reminder_3_sent END,
-      reminder_1_sent = CASE WHEN deadline IS DISTINCT FROM $3::date THEN FALSE ELSE reminder_1_sent END,
-      updated_at = CURRENT_TIMESTAMP
-      , content_revision = content_revision + 1, posting_status = $14, workflow_enabled = TRUE
-     WHERE id = $13 RETURNING ${DETAIL_COLUMNS}`,
-    [
-      opportunity.name, opportunity.details, opportunity.deadline, opportunity.category,
-      opportunity.organizationName, opportunity.organizationType, opportunity.location,
-      opportunity.applicationUrl, opportunity.contactEmail, opportunity.eligibility,
-      JSON.stringify(opportunity.requirements), JSON.stringify(opportunity.attributes), id, opportunity.postingStatus ?? 'unknown',
-    ],
-  );
-  return result.rowCount ? mapOpportunityRow(result.rows[0]) : null;
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `UPDATE opportunities SET
+        name = $1, details = $2, deadline = $3, category = $4,
+        organization_name = $5, organization_type = $6, location = $7,
+        application_url = $8, contact_email = $9, eligibility = $10,
+        requirements = $11::jsonb, attributes = $12::jsonb,
+        reminder_7_sent = CASE WHEN deadline IS DISTINCT FROM $3::date THEN FALSE ELSE reminder_7_sent END,
+        reminder_3_sent = CASE WHEN deadline IS DISTINCT FROM $3::date THEN FALSE ELSE reminder_3_sent END,
+        reminder_1_sent = CASE WHEN deadline IS DISTINCT FROM $3::date THEN FALSE ELSE reminder_1_sent END,
+        updated_at = CURRENT_TIMESTAMP
+        , content_revision = content_revision + 1, posting_status = $14, workflow_enabled = TRUE
+       WHERE id = $13 RETURNING ${DETAIL_COLUMNS}`,
+      [
+        opportunity.name, opportunity.details, opportunity.deadline, opportunity.category,
+        opportunity.organizationName, opportunity.organizationType, opportunity.location,
+        opportunity.applicationUrl, opportunity.contactEmail, opportunity.eligibility,
+        JSON.stringify(opportunity.requirements), JSON.stringify(opportunity.attributes), id, opportunity.postingStatus ?? 'unknown',
+      ],
+    );
+    if (!result.rowCount) { await client.query('ROLLBACK'); return null; }
+    await syncOpportunityLinks(client, id, opportunity);
+    const refreshed = await client.query(`SELECT ${DETAIL_COLUMNS} FROM opportunities WHERE id = $1`, [id]);
+    await client.query('COMMIT');
+    return mapOpportunityRow(refreshed.rows[0]);
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function deleteOpportunity(id: string): Promise<{ deleted: boolean; storagePaths: string[] }> {

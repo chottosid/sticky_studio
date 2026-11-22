@@ -31,6 +31,8 @@ export type Opportunity = OpportunityInput & {
   created_at?: string;
   updated_at?: string;
   contentRevision?: number;
+  /** The organizations row this opportunity belongs to; null until resolved. */
+  organizationId?: string | null;
   profileAssessments?: ProfileAssessments;
   fieldEvidence?: Evidence[];
   /** Compatibility fields while legacy document_uri rows are migrated. */

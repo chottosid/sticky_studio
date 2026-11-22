@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { CalendarClock, Inbox, LayoutList, LogOut, MessageSquare, Settings, StickyNote } from 'lucide-react';
+import { CalendarClock, GraduationCap, Inbox, LayoutList, LogOut, MessageSquare, Settings, StickyNote } from 'lucide-react';
 import { AddOpportunityDialog } from '@/components/opportunities/add-opportunity-dialog';
 import { Button } from '@/components/ui/button';
 import { logout } from '@/lib/actions';
@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 const navigation = [
   { href: '/', label: 'Today', icon: CalendarClock, page: 'today' },
   { href: '/ledger', label: 'Ledger', icon: LayoutList, page: 'ledger' },
+  { href: '/labs', label: 'Labs', icon: GraduationCap, page: 'labs' },
   { href: '/inbox', label: 'Inbox', icon: Inbox, page: 'inbox' },
   { href: '/agent', label: 'Agent', icon: MessageSquare, page: 'agent' },
 ] as const;

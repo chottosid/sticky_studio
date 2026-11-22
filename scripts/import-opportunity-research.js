@@ -6,6 +6,7 @@ require('dotenv').config({ quiet: true });
 const jiti = require('jiti')(__filename, { alias: { '@': path.join(__dirname, '..', 'src') } });
 const { OpportunityInputSchema } = jiti('../src/domain/opportunity/schema.ts');
 const { canonicalizeUrl } = jiti('../src/lib/duplicate-normalization.ts');
+const { syncOpportunityLinks } = jiti('../src/lib/organizations.ts');
 
 async function main() {
   const filename = process.argv[2];
@@ -56,6 +57,8 @@ async function main() {
           [o.name,o.details,o.deadline,o.category,o.organizationName,o.organizationType,o.location,o.applicationUrl,o.contactEmail,
             o.eligibility,JSON.stringify(o.requirements),JSON.stringify(o.attributes),o.postingStatus ?? 'unknown']);
           id = result.rows[0].id; inserted += 1;
+          // Link the organization and any named professors (requires migration 010).
+          await syncOpportunityLinks(client, id, o);
         }
         for (const url of new Set(record.sourceUrls)) {
           const canonical = canonicalizeUrl(url);
