@@ -115,7 +115,7 @@ Run `npm run db:migrate` **before** deploying this release (adds `006_shared_sou
 ## Release: applicant workflow and background jobs
 
 1. Configure `DATABASE_CA_CERT` in every hosted environment using the Supabase project's database CA PEM. Local connections to Supabase can use `.local/supabase-postgres-ca.crt`. Local loopback PostgreSQL uses its local connection settings.
-2. Run `npm run db:migrate` before deploying the app. Migration 008 adds applicant progress, assessment history and jobs. It preserves existing opportunity IDs, sources, deadlines, reminder flags and legacy assessment JSON.
+2. Run `npm run db:migrate` before deploying the app. Migration 008 adds applicant progress, assessment history and jobs. It preserves existing opportunity IDs, sources, deadlines, reminder flags and legacy assessment JSON. Migration 009 protects the application tables from the Supabase public API roles and preserves the scoped PostgreSQL research login.
 3. Verify authenticated Today, ledger, applicant detail and inbox routes. An unauthenticated request to either cron route must return 401. Test model and Telegram failure paths with a sandbox database and mocked providers.
 4. For rollback, redeploy an earlier application build while keeping the additive schema. Data created by the new workflow remains in its tables.
 
