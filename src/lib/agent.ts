@@ -6,7 +6,7 @@ import { OpportunityInputSchema } from '@/domain/opportunity/schema';
 import type { CandidateId } from '@/domain/opportunity/assessment';
 import { ResearchOutputSchema, type ResearchProposal, type WeeklyTask } from '@/domain/opportunity/agent';
 import { draftOutreach, searchOpportunities, type AgentCitation } from '@/ai/agent';
-import { appToday, daysUntil } from './deadlines';
+import { appToday } from './deadlines';
 import { applicantOpportunities, groupApplicantWork } from './applicant-workflow';
 import { query } from './db';
 import { getOpportunityById } from './data';
@@ -15,11 +15,9 @@ import { getCandidateProfiles } from './profiles';
 import { sliceText } from './utils';
 
 export async function weeklyTasks(candidate: CandidateId): Promise<WeeklyTask[]> {
-  const today = appToday();
   const groups = groupApplicantWork(await applicantOpportunities({ candidate }));
   return [
     ...groups['follow-ups'], ...groups.due,
-    ...groups.verification.filter((item) => item.deadline ? daysUntil(item.deadline, today) <= 7 : item.summary.fit === 'strong' || item.summary.progress.stage === 'applying'),
     ...groups.prepare,
   ].slice(0, 20).map((item) => ({
     id: item.id, candidate, name: item.name, action: item.summary.action,

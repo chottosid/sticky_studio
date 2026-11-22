@@ -21,7 +21,7 @@ async function enqueue(key: string, payload: Reminder) {
 }
 
 function eligibleForDeadline(action: string) {
-  return action === 'prepare' || action === 'verify' || action === 'follow-up';
+  return action === 'prepare' || action === 'follow-up';
 }
 
 export async function queueReminders(today: string) {

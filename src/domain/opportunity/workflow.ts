@@ -32,7 +32,7 @@ export type AssessmentSummary = Pick<ApplicantAssessment, 'fit' | 'question'> & 
 };
 export type ApplicantProgress = { stage: ApplicationStage; followUpOn: string | null; note: string };
 export const defaultProgress: ApplicantProgress = { stage: 'considering', followUpOn: null, note: '' };
-export type ActionKind = 'follow-up' | 'verify' | 'prepare' | 'track' | 'skip' | 'complete';
+export type ActionKind = 'follow-up' | 'prepare' | 'track' | 'skip' | 'complete';
 export type NextAction = { kind: ActionKind; label: string; text: string };
 export type ApplicantSummary = {
   progress: ApplicantProgress;
@@ -75,8 +75,8 @@ export function nextAction(input: {
   if (progress.stage === 'applied') return { kind: 'complete', label: 'Applied', text: 'Application submitted.' };
   if (state === 'closed') return { kind: 'track', label: 'Posting closed', text: 'Check for a future opening if still interested.' };
   if (assessment?.eligibility === 'ineligible') return { kind: 'skip', label: 'Requirement unmet', text: 'Review the decisive requirement before applying.' };
-  // Unclear eligibility is not a blocker: open questions are shown with the next step instead.
-  if (state === 'unknown') return { kind: 'verify', label: 'Verify intake', text: 'Confirm this opening is accepting applications.' };
+  // Nothing asks for verification: open questions from an assessment are shown with the next step.
+  if (progress.stage !== 'applying' && state === 'unknown') return { kind: 'track', label: 'Keep on watch', text: 'No deadline is listed for this opening.' };
   if (progress.stage === 'applying' || !assessment || assessment.fit === 'strong' || assessment.fit === 'good' || assessment.fit === 'unknown') {
     return { kind: 'prepare', label: 'Prepare application', text: assessment?.question || 'Check the application checklist and prepare materials.' };
   }
@@ -85,7 +85,6 @@ export function nextAction(input: {
 
 export function actionGroup(action: NextAction, deadline: string | null, today: string) {
   if (action.kind === 'follow-up') return 'follow-ups';
-  if (action.kind === 'verify') return 'verification';
   if (action.kind === 'prepare') return deadline && daysUntil(deadline, today) <= 7 ? 'due' : 'prepare';
   return null;
 }

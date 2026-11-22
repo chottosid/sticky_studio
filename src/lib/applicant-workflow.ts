@@ -97,7 +97,7 @@ export async function assessmentHistory(opportunityId: string, candidate: Candid
 export function groupApplicantWork(items: ApplicantOpportunity[]) {
   const today = appToday();
   const groups = { 'follow-ups': [] as ApplicantOpportunity[], due: [] as ApplicantOpportunity[],
-    verification: [] as ApplicantOpportunity[], prepare: [] as ApplicantOpportunity[] };
+    prepare: [] as ApplicantOpportunity[] };
   for (const item of items) {
     const group = actionGroup(item.summary.action, item.deadline, today);
     if (group) groups[group].push(item);

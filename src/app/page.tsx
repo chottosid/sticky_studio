@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowUpRight, CalendarClock, CircleHelp, ClipboardList, CornerDownRight } from 'lucide-react';
+import { ArrowUpRight, CalendarClock, ClipboardList, CornerDownRight } from 'lucide-react';
 import Header from '@/components/layout/header';
 import { opportunityCategoryLabels } from '@/domain/opportunity/config';
 import { CandidateIdSchema, candidates } from '@/domain/opportunity/assessment';
@@ -24,7 +24,6 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   const sections = [
     { key: 'follow-ups', title: 'Follow-ups', icon: CornerDownRight, items: groups['follow-ups'], empty: 'No follow-ups due in the next seven days.' },
     { key: 'due', title: 'Due soon', icon: CalendarClock, items: groups.due, empty: 'No ready applications due in the next seven days.' },
-    { key: 'verification', title: 'Needs verification', icon: CircleHelp, items: groups.verification, empty: 'No outstanding verification.' },
     { key: 'prepare', title: 'Prepare next', icon: ClipboardList, items: groups.prepare, empty: 'No other applications ready to prepare.' },
   ];
   const expanded = sections.find((section) => section.key === params.view);

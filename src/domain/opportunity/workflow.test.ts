@@ -18,7 +18,7 @@ describe('next action', () => {
     const plan = nextAction({ ...base, assessment: facts });
     expect(plan.kind).toBe('prepare');
     expect(actionGroup(plan, base.deadline, today)).toBe('due');
-    expect(nextAction({ ...base, deadline: null, assessment: facts }).label).toBe('Verify intake');
+    expect(nextAction({ ...base, deadline: null, assessment: facts }).kind).toBe('track');
     expect(nextAction({ ...base, deadline: null, postingStatus: 'rolling', assessment: facts }).kind).toBe('prepare');
     expect(nextAction({ ...base, assessment: { ...facts, question: 'Confirm funding.' } }).text).toBe('Confirm funding.');
   });
