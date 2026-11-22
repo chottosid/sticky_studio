@@ -5,7 +5,6 @@ import { after } from 'next/server';
 import { assessOpportunities } from './assessments';
 import type { ExtractionSource, OpportunityInput } from '@/domain/opportunity/schema';
 import { saveOpportunity } from '@/lib/data';
-import { sendNewOpportunityEmail } from '@/lib/email';
 import { removeStoredSources, uploadOpportunitySources } from '@/lib/source-storage';
 import {
   createDuplicateConfirmationToken,
@@ -50,7 +49,7 @@ export async function saveOpportunityBatch(input: SaveOpportunityBatchInput) {
 
     // Upload once; every opportunity in the batch references the same
     // content-addressed objects (deduped in storage, see source-storage.ts).
-    uploadedSources = await uploadOpportunitySources(sources);
+    uploadedSources = sources.length ? await uploadOpportunitySources(sources) : [];
     for (const opportunity of opportunities) {
       try {
         const saved = await saveOpportunity(
@@ -63,7 +62,6 @@ export async function saveOpportunityBatch(input: SaveOpportunityBatchInput) {
           try { await assessOpportunities([saved.id]); revalidatePath('/'); }
           catch { console.error('Priority refresh failed; saved opportunity can be reassessed.'); }
         });
-        await sendNewOpportunityEmail(saved);
       } catch (error) {
         // Only remove when nothing was saved — earlier saves still reference the objects.
         if (savedCount === 0) {
@@ -73,6 +71,7 @@ export async function saveOpportunityBatch(input: SaveOpportunityBatchInput) {
       }
     }
     revalidatePath('/');
+    revalidatePath('/agent');
     return {
       success: true as const,
       message: savedCount === 1 ? `Saved “${opportunities[0].name}”` : `Saved ${savedCount} opportunities`,

@@ -40,7 +40,7 @@ export async function assessOpportunities(ids: string[], force = false) {
   const claimedIds = claimed.rows.map((row) => String(row.id));
   if (!claimedIds.length) return { assessed: 0, skipped: ids.length };
   try {
-    const opportunities = (await Promise.all(claimedIds.map(getOpportunityById)))
+    const opportunities = (await Promise.all(claimedIds.map((id) => getOpportunityById(id, { includeLegacyDocument: false }))))
       .filter((item): item is NonNullable<typeof item> => Boolean(item));
     if (!opportunities.length) return { assessed: 0, skipped: ids.length };
     const decisions = await assessFit(opportunities, profiles, appToday());

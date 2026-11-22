@@ -12,6 +12,9 @@ export default function Header() {
           Opportunity Oasis
         </Link>
         <div className="ml-auto flex items-center gap-1">
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/agent" prefetch={false}>Agent</Link>
+          </Button>
           <AddOpportunityDialog />
           <form action={logout}>
             <Button variant="ghost" size="sm" type="submit" className="text-muted-foreground">

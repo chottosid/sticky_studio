@@ -12,6 +12,12 @@ A single-user opportunity manager for jobs, internships, contests, and higher-st
 
 The development server runs at <http://localhost:9002>.
 
+## Agent
+
+Open **Agent** from the signed-in header. **Plan my week** ranks saved opportunities for the selected applicant using their deadlines and current assessments. **Research** returns public source links and opens proposals in the standard review form. **Draft outreach** uses a saved opportunity and the selected applicant's evidence and provides a copyable subject and body for manual sending.
+
+Research and drafting use `OPENROUTER_AGENT_API_KEY`, a separate server-side OpenRouter key with a monthly credit limit. The optional `OPENROUTER_AGENT_MODEL` defaults to `google/gemini-2.5-flash-lite`. Start a private chat with the configured Telegram bot using `/start` to receive deadline reminders.
+
 ## Separate applicant priorities
 
 The ledger assesses Swarup and Archita independently using their public portfolios at [swarupsidhartho.com](https://swarupsidhartho.com/) and [archi120.github.io](https://archi120.github.io/). Each opportunity shows a tier for each person; filter or sort by either applicant. The detail page explains profile evidence, eligibility, strengths, gaps and the next action. P1 means focus first, P2 worth pursuing, P3 stretch/secondary and P4 low fit. Explicit eligibility failures and insufficient evidence have separate labels. These tiers are effort priorities, not acceptance probabilities.

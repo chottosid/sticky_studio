@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
-import { sendEmail } from '@/lib/email';
 import { dueLabel, pendingReminder, type ReminderThreshold } from '@/lib/reminders';
-import { dateInTimezone, escapeHtml } from '@/lib/utils';
+import { reminderChatId, sendTelegramReminder } from '@/lib/telegram/api';
+import { appToday } from '@/lib/deadlines';
+
+export const maxDuration = 300;
 
 type ReminderRow = {
   id: number;
   name: string;
-  details: string;
   deadline: string;
   days_left: number;
   reminder_7_sent: boolean | null;
@@ -19,19 +20,24 @@ const flagColumn = (threshold: ReminderThreshold) => `reminder_${threshold}_sent
 
 export async function GET(request: Request) {
   const cronSecret = process.env.CRON_SECRET;
-  if (process.env.NODE_ENV === 'production'
-    && (!cronSecret || request.headers.get('authorization') !== `Bearer ${cronSecret}`)) {
+  if (!cronSecret || request.headers.get('authorization') !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  }
+
+  const chatId = reminderChatId();
+  if (chatId === null) {
+    return NextResponse.json({ success: false, message: 'Telegram reminders are not configured.' }, { status: 503 });
   }
 
   try {
     // Days are counted in the app's timezone; the database's CURRENT_DATE is UTC.
-    const today = dateInTimezone(new Date(), process.env.APP_TIMEZONE || 'Asia/Dhaka');
+    const today = appToday();
     const { rows } = await query<ReminderRow>(`
-      SELECT id, name, details, deadline::text AS deadline, (deadline - $1::date) AS days_left,
+      SELECT id, name, deadline::text AS deadline, (deadline - $1::date) AS days_left,
              reminder_7_sent, reminder_3_sent, reminder_1_sent
       FROM opportunities
       WHERE deadline BETWEEN $1::date AND $1::date + 7
+      ORDER BY deadline, id
     `, [today]);
 
     let sent = 0;
@@ -46,20 +52,22 @@ export async function GET(request: Request) {
       const columns = reminder.thresholds.map(flagColumn);
       const claim = await query(
         `UPDATE opportunities SET ${columns.map((column) => `${column} = true`).join(', ')}
-         WHERE id = $1 AND ${columns.map((column) => `COALESCE(${column}, false) = false`).join(' AND ')}
+         WHERE id = $1 AND deadline = $2::date
+           AND ${columns.map((column) => `COALESCE(${column}, false) = false`).join(' AND ')}
          RETURNING id`,
-        [row.id],
+        [row.id, row.deadline],
       );
       if (!claim.rowCount) continue;
 
       try {
-        await sendReminderEmail(row);
+        await sendTelegramReminder(chatId, reminderMessage(row));
         sent += 1;
       } catch (error) {
         console.error(`Reminder for opportunity ${row.id} failed:`, error);
         await query(
-          `UPDATE opportunities SET ${columns.map((column) => `${column} = false`).join(', ')} WHERE id = $1`,
-          [row.id],
+          `UPDATE opportunities SET ${columns.map((column) => `${column} = false`).join(', ')}
+           WHERE id = $1 AND deadline = $2::date`,
+          [row.id, row.deadline],
         );
         failed += 1;
       }
@@ -72,17 +80,10 @@ export async function GET(request: Request) {
   }
 }
 
-async function sendReminderEmail(opportunity: ReminderRow) {
+function reminderMessage(opportunity: ReminderRow) {
   const due = dueLabel(opportunity.days_left);
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-  const html = `
-    <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 5px;">
-      <h2 style="color: #b42318;">${escapeHtml(opportunity.name)} is ${due}</h2>
-      <p><strong>Deadline:</strong> ${escapeHtml(opportunity.deadline)}</p>
-      <div style="background: #f9f9f9; padding: 10px; border-radius: 4px; white-space: pre-wrap;">${escapeHtml(opportunity.details)}</div>
-      <p><a href="${baseUrl}/opportunity/${opportunity.id}" style="background-color: #0070f3; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Open opportunity</a></p>
-    </div>
-  `;
-  const info = await sendEmail(`Reminder: ${opportunity.name} is ${due}`, html);
-  if (!info) throw new Error('Reminder email was not sent.');
+  const deployedHost = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || (deployedHost ? `https://${deployedHost}` : 'http://localhost:9002');
+  const href = new URL(`/opportunity/${opportunity.id}`, baseUrl);
+  return `${opportunity.name} is ${due}\nDeadline ${opportunity.deadline}\n${href}`;
 }

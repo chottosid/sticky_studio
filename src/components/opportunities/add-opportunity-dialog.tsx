@@ -41,11 +41,12 @@ type DuplicateWarning = {
 type AddOpportunityDialogProps = {
   /** Opens straight into review for a Telegram inbox draft; sources stay on the server. */
   inboxItem?: { id: number; draft: ExtractionDraft | null };
+  reviewDraft?: ExtractionDraft;
   trigger?: React.ReactNode;
   onSaved?: () => void;
 };
 
-export function AddOpportunityDialog({ inboxItem, trigger, onSaved }: AddOpportunityDialogProps = {}) {
+export function AddOpportunityDialog({ inboxItem, reviewDraft, trigger, onSaved }: AddOpportunityDialogProps = {}) {
   const [open, setOpen] = React.useState(false);
   const [step, setStep] = React.useState<'input' | 'review'>('input');
   const [activeTab, setActiveTab] = React.useState<'files' | 'text'>('files');
@@ -75,14 +76,15 @@ export function AddOpportunityDialog({ inboxItem, trigger, onSaved }: AddOpportu
     setIsExtracting(false);
     setIsSaving(false);
     setDuplicateWarning(null);
-    if (inboxItem?.draft) {
-      setDraft(inboxItem.draft);
-      setItems(inboxItem.draft.opportunities.map((item) => item.opportunity));
+    const suppliedDraft = inboxItem?.draft ?? reviewDraft;
+    if (suppliedDraft) {
+      setDraft(suppliedDraft);
+      setItems(suppliedDraft.opportunities.map((item) => item.opportunity));
       setStep('review');
     }
-  }, [inboxItem]);
+  }, [inboxItem, reviewDraft]);
 
-  // Also runs on mount (open=false), so an inbox dialog is already in review before it opens — no flash of the input step.
+  // Prepare supplied drafts before the dialog opens to avoid flashing the source input.
   React.useEffect(() => {
     reset();
   }, [open, reset]);
@@ -293,7 +295,7 @@ export function AddOpportunityDialog({ inboxItem, trigger, onSaved }: AddOpportu
               unresolvedFields={draft?.opportunities[activeIndex]?.unresolvedFields}
             />
             <DialogFooter>
-              {!inboxItem && (
+              {!inboxItem && !reviewDraft && (
                 <Button variant="ghost" onClick={() => setStep('input')} disabled={isSaving}>Back</Button>
               )}
               <Button onClick={() => void handleSave()} disabled={isSaving}>

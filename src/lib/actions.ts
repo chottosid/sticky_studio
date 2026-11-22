@@ -23,6 +23,7 @@ import { query } from '@/lib/db';
 import { after } from 'next/server';
 import type { CandidateId, PriorityTier } from '@/domain/opportunity/assessment';
 import { assessOpportunities } from '@/lib/assessments';
+import { canonicalizeUrl } from './duplicate-normalization';
 
 export async function isAuthenticated() {
   const cookieStore = await cookies();
@@ -83,9 +84,11 @@ export async function logout() {
 
 const SaveOpportunityRequestSchema = z.object({
   opportunities: z.array(OpportunityInputSchema).min(1).max(10),
-  sources: z.array(ExtractionSourceSchema).min(1).max(10),
+  sources: z.array(ExtractionSourceSchema).max(10),
   discoveredSourceUrls: z.array(z.string().url().max(2_000)).max(20).default([]),
   duplicateConfirmationToken: z.string().max(5_000).optional(),
+}).refine(({ sources, discoveredSourceUrls }) => sources.length > 0 || discoveredSourceUrls.some(canonicalizeUrl), {
+  message: 'Provide an attachment, text, or a web source.', path: ['sources'],
 });
 
 export async function addOpportunity(input: unknown) {
@@ -134,6 +137,7 @@ export async function deleteOpportunityAction(id: string) {
     if (!result.deleted) return { success: false as const, message: 'Opportunity not found' };
     await removeStoredSources(result.storagePaths);
     revalidatePath('/');
+    revalidatePath('/agent');
     return { success: true as const, message: 'Opportunity deleted' };
   } catch (error) {
     console.error('Error deleting opportunity:', error);
@@ -161,6 +165,7 @@ export async function updateOpportunityAction(input: unknown) {
       catch { console.error('Priority refresh failed; opportunity remains saved and can be reassessed.'); }
     });
     revalidatePath('/');
+    revalidatePath('/agent');
     revalidatePath(`/opportunity/${parsed.data.id}`);
     return {
       success: true as const,

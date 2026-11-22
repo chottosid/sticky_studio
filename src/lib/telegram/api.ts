@@ -27,6 +27,19 @@ export async function leaveChat(chatId: number): Promise<void> {
   await call('leaveChat', { chat_id: chatId });
 }
 
+export function reminderChatId(): number | null {
+  const ownerId = Number(process.env.TELEGRAM_OWNER_ID);
+  return process.env.TELEGRAM_BOT_TOKEN && Number.isSafeInteger(ownerId) && ownerId > 0 ? ownerId : null;
+}
+
+export async function sendTelegramReminder(chatId: number, text: string): Promise<void> {
+  await call('sendMessage', {
+    chat_id: chatId,
+    text,
+    link_preview_options: { is_disabled: true },
+  });
+}
+
 export const downloadFileAsDataUri: DownloadFile = async (fileId, mimeType) => {
   const file = await call<{ file_path?: string }>('getFile', { file_id: fileId });
   if (!file.file_path) throw new Error('Telegram did not return a file path.');

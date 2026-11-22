@@ -17,9 +17,10 @@ type Queryable = Pick<PoolClient, 'query'>;
 const SELECT_COLUMNS = `
   id, name, details, deadline, category,
   organization_name, organization_type, location, application_url, contact_email,
-  eligibility, requirements, attributes, document_uri, document_type, created_at, updated_at,
+  eligibility, requirements, attributes, created_at, updated_at,
   profile_assessments, content_revision
 `;
+const DETAIL_COLUMNS = `${SELECT_COLUMNS}, document_uri, document_type`;
 
 function parseJsonValue(value: unknown, fallback: unknown) {
   if (value === null || value === undefined) return fallback;
@@ -141,9 +142,10 @@ export async function getOpportunities(
   };
 }
 
-export async function getOpportunityById(id: string): Promise<Opportunity | undefined> {
+export async function getOpportunityById(id: string, { includeLegacyDocument = true } = {}): Promise<Opportunity | undefined> {
   if (!isNumericId(id)) return undefined;
-  const result = await query(`SELECT ${SELECT_COLUMNS} FROM opportunities WHERE id = $1`, [id]);
+  const columns = includeLegacyDocument ? DETAIL_COLUMNS : SELECT_COLUMNS;
+  const result = await query(`SELECT ${columns} FROM opportunities WHERE id = $1`, [id]);
   if (!result.rowCount) return undefined;
 
   const opportunity = mapOpportunityRow(result.rows[0]);
@@ -255,7 +257,7 @@ export async function updateOpportunity(id: string, input: OpportunityInput): Pr
       reminder_1_sent = CASE WHEN deadline IS DISTINCT FROM $3::date THEN FALSE ELSE reminder_1_sent END,
       updated_at = CURRENT_TIMESTAMP
       , content_revision = content_revision + 1
-     WHERE id = $13 RETURNING ${SELECT_COLUMNS}`,
+     WHERE id = $13 RETURNING ${DETAIL_COLUMNS}`,
     [
       opportunity.name, opportunity.details, opportunity.deadline, opportunity.category,
       opportunity.organizationName, opportunity.organizationType, opportunity.location,

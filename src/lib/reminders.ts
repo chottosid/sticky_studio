@@ -3,7 +3,7 @@ export type ReminderThreshold = (typeof REMINDER_THRESHOLDS)[number];
 
 /**
  * One reminder per crossing: the nearest unsent threshold at or above `daysLeft` triggers a
- * single email, and every threshold it covers is marked so later runs don't send stale ones.
+ * single reminder, and every threshold it covers is marked so later runs skip stale ones.
  */
 export function pendingReminder(
   daysLeft: number,

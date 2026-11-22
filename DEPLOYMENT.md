@@ -11,7 +11,7 @@ The migration is additive and retains the existing opportunity rows and base64 s
    - `SUPABASE_SERVICE_ROLE_KEY`: server-only service-role key; never prefix it with `NEXT_PUBLIC_`.
    - `OPENROUTER_API_KEY`: a server-only OpenRouter credential.
    - Optional `APP_TIMEZONE` and `OPENROUTER_MODEL` overrides (model default: `openai/gpt-6-luna-pro`).
-3. Keep the existing `DATABASE_URL`, authentication, LLM, SMTP, and cron variables.
+3. Keep the existing `DATABASE_URL`, authentication, LLM, and cron variables.
 
 ## 2. Prepare storage and schema
 
@@ -68,12 +68,18 @@ WHERE canonical_url IS NOT NULL OR content_sha256 IS NOT NULL;
 
 Open each existing opportunity in the UI and confirm its signed source link works. After at least one stable release and a fresh backup, a separate cleanup migration may remove legacy base64 data; it is deliberately not included here.
 
+### Storage audit and legacy attachment retirement
+
+`npm run db:audit` reports table and index sizes, index scans, and legacy attachment counts without returning attachment content. An index with zero scans may still be useful after a statistics reset, so check query plans before removing indexes.
+
+`npm run db:retire-legacy-sources` previews opportunities whose linked file can be downloaded from the private bucket and matches the original attachment's SHA-256. Run it with the database and Storage credentials for the same project. Use `npm run db:retire-legacy-sources -- --apply` after verifying the preview. It writes an ignored recovery file under `.local/` before clearing the matching `document_uri` and `document_type` values in one transaction. The recovery file records the original values and each verified source. Keep the existing columns available for legacy rows and rollback.
+
 ## 5. Operational checks and rollback
 
 - Confirm extraction produces a review draft and no row/storage object appears before **Save Opportunity**.
 - Submit a paraphrase of an existing announcement, review every proposed match, cancel once, then confirm **Save anyway** only saves after explicit approval.
 - Save one no-deadline opportunity and confirm it appears under Upcoming without reminder errors.
-- Confirm 7/3/1-day reminders still run through `/api/cron/reminders` with `CRON_SECRET`.
+- Confirm 7/3/1-day reminders reach the owner's private Telegram chat through `/api/cron/reminders` with `CRON_SECRET`.
 - Confirm the Vercel cleanup cron is gone; existing history must not be deleted.
 
 If the application deployment must be rolled back, the additive columns do not break the previous code and legacy `document_uri` values are still present. Roll back the application first; do not drop new columns or the bucket during an incident.
@@ -115,3 +121,11 @@ The authenticated ledger and detail pages show independent applicant tiers and e
 `vercel.json` schedules `/api/cron/assessments` daily at 08:00 UTC, separately from reminders. Set `CRON_SECRET`; this route always requires `Authorization: Bearer <CRON_SECRET>`. Each run processes at most 30 opportunities, in batches of three. Initial imports or large backlogs can be completed with the trusted CLI above. Both pages and the route use a 300-second duration budget, so hosting must support it. Failed assessments keep existing results and remain available to retry. Assessment work does not send mail or submit applications.
 
 After deployment, check both profile snapshot dates, choose each applicant in the priority filter, open a result’s evidence and confirm an unauthenticated assessment-cron request returns 401. Run the bulk CLI once to fill pending rows. Research imports and cross-checks retain source documents and record the original metadata in `opportunity_research_audits`.
+
+## Agent and private Telegram reminders
+
+The repository pins Vercel Functions to Singapore (`sin1`) for the Singapore Supabase database. Check the deployed region in Vercel and time signed-in ledger loads and opportunity saves before and after the deployment.
+
+For research and outreach, add `OPENROUTER_AGENT_API_KEY` in Vercel. Use a separate OpenRouter key with a positive monthly credit limit. Verify the chosen `OPENROUTER_AGENT_MODEL` with a sample research request that returns source links and an outreach draft. **Plan my week** uses the database directly.
+
+Start a private chat with the bot from the account identified by `TELEGRAM_OWNER_ID`. The existing daily reminder cron sends 7-, 3-, and 1-day Telegram messages. Set `NEXT_PUBLIC_BASE_URL` if reminder links should use a custom domain. Confirm a test reminder in staging and remove the retired `SMTP_*` and `RECIPIENT_EMAILS` settings from the deployment.
